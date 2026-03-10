@@ -6,12 +6,12 @@ defmodule OpenClawZalify.MixProject do
       app: :openclaw_zalify,
       version: "0.1.0",
       elixir: "~> 1.18",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger],
@@ -19,12 +19,17 @@ defmodule OpenClawZalify.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
+
   defp deps do
     [
       {:bandit, "~> 1.5"},
+      {:ecto_sql, "~> 3.12"},
       {:jason, "~> 1.4"},
-      {:plug, "~> 1.16"}
+      {:plug, "~> 1.16"},
+      {:postgrex, "~> 0.19"},
+      {:websockex, "~> 0.4.3"}
     ]
   end
 end

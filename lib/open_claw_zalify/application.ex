@@ -6,13 +6,27 @@ defmodule OpenClawZalify.Application do
   @impl true
   def start(_type, _args) do
     children =
-      if Application.get_env(:openclaw_zalify, :start_http_server, true) do
-        [OpenClawZalifyWeb.Endpoint.child_spec()]
-      else
-        []
-      end
+      []
+      |> maybe_add_repo()
+      |> maybe_add_http_server()
 
     opts = [strategy: :one_for_one, name: OpenClawZalify.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp maybe_add_repo(children) do
+    if Application.get_env(:openclaw_zalify, :start_repo, true) do
+      [OpenClawZalify.Repo | children]
+    else
+      children
+    end
+  end
+
+  defp maybe_add_http_server(children) do
+    if Application.get_env(:openclaw_zalify, :start_http_server, true) do
+      children ++ [OpenClawZalifyWeb.Endpoint.child_spec()]
+    else
+      children
+    end
   end
 end
