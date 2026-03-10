@@ -29,6 +29,7 @@ defmodule OpenClawZalify.MixProject do
       {:jason, "~> 1.4"},
       {:plug, "~> 1.16"},
       {:postgrex, "~> 0.19"},
+      {:websock_adapter, "~> 0.5"},
       {:websockex, "~> 0.4.3"}
     ]
   end

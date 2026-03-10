@@ -8,6 +8,7 @@ defmodule OpenClawZalify.Config do
 
   @default_http_port 4000
   @default_admin_timeout_ms 5_000
+  @default_chat_timeout_ms 60_000
   @default_probe_timeout_ms 1_500
   @default_gateway_url "ws://127.0.0.1:18789"
   @default_workspace_root "/home/node/.openclaw/workspace/zalify"
@@ -24,6 +25,14 @@ defmodule OpenClawZalify.Config do
 
     System.get_env("OPENCLAW_ADMIN_TIMEOUT_MS", Integer.to_string(@default_admin_timeout_ms))
     |> parse_positive_integer(@default_admin_timeout_ms)
+  end
+
+  @spec openclaw_chat_timeout_ms() :: pos_integer()
+  def openclaw_chat_timeout_ms do
+    load_dotenv()
+
+    System.get_env("OPENCLAW_CHAT_TIMEOUT_MS", Integer.to_string(@default_chat_timeout_ms))
+    |> parse_positive_integer(@default_chat_timeout_ms)
   end
 
   @spec openclaw_probe_timeout_ms() :: pos_integer()

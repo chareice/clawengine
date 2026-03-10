@@ -6,6 +6,7 @@ defmodule OpenClawZalifyWeb.Router do
   alias OpenClawZalify.Agents.AgentRecord
   alias OpenClawZalify.Config
   alias OpenClawZalify.OpenClaw.Probe
+  alias OpenClawZalifyWeb.ChatSocket
 
   plug(Plug.Logger)
   plug(:match)
@@ -35,6 +36,12 @@ defmodule OpenClawZalifyWeb.Router do
       {:error, payload} ->
         json(conn, 503, payload)
     end
+  end
+
+  get "/ws/chat" do
+    conn
+    |> WebSockAdapter.upgrade(ChatSocket, [], timeout: Config.openclaw_chat_timeout_ms())
+    |> halt()
   end
 
   get "/api/workspaces/:workspace_id/ai-agent" do
