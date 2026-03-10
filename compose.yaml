@@ -1,0 +1,30 @@
+services:
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    restart: unless-stopped
+    environment:
+      HOME: /home/node
+      NODE_ENV: production
+      TERM: xterm-256color
+      OPENCLAW_GATEWAY_BIND: ${OPENCLAW_GATEWAY_BIND:-lan}
+      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-change-me}
+      GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD:-local-dev-keyring-password}
+      XDG_CONFIG_HOME: /home/node/.openclaw
+    volumes:
+      - ./.docker/openclaw:/home/node/.openclaw
+      - ./.docker/openclaw/workspace:/home/node/.openclaw/workspace
+      - ./priv/openclaw/openclaw.json:/home/node/.openclaw/openclaw.json:ro
+    ports:
+      - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--bind",
+        "${OPENCLAW_GATEWAY_BIND:-lan}",
+        "--port",
+        "${OPENCLAW_GATEWAY_PORT:-18789}",
+        "--allow-unconfigured"
+      ]
