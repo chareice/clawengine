@@ -1,12 +1,13 @@
 defmodule OpenClawZalify.Chat do
   @moduledoc """
-  Chat control-plane service for workspace-scoped OpenClaw sessions.
+  Chat control-plane service for space-scoped OpenClaw sessions.
   """
 
-  alias OpenClawZalify.Agents
   alias OpenClawZalify.Agents.AgentRecord
   alias OpenClawZalify.Chat.SessionRecord
   alias OpenClawZalify.Config
+  alias OpenClawZalify.Engine.Space
+  alias OpenClawZalify.Spaces
 
   @type send_opts :: [
           {:stream_ref, term()},
@@ -16,18 +17,19 @@ defmodule OpenClawZalify.Chat do
         ]
 
   @spec send_message(String.t() | nil, String.t() | nil, String.t(), send_opts()) ::
-          {:ok, %{session: SessionRecord.t(), agent: AgentRecord.t()}} | {:error, term()}
-  def send_message(workspace_id, session_id, message, opts)
-      when (is_binary(workspace_id) or is_nil(workspace_id)) and
+          {:ok, %{session: SessionRecord.t(), agent: AgentRecord.t(), space: Space.t()}}
+          | {:error, term()}
+  def send_message(space_id, session_id, message, opts)
+      when (is_binary(space_id) or is_nil(space_id)) and
              (is_binary(session_id) or is_nil(session_id)) and is_binary(message) and
              is_list(opts) do
-    workspace_id = normalize_optional_text(workspace_id)
+    space_id = normalize_optional_text(space_id)
     session_id = normalize_optional_text(session_id)
     message = String.trim(message)
 
     with :ok <- validate_message(message),
-         {:ok, {session, agent}} <- resolve_session_and_agent(workspace_id, session_id),
-         :ok <- maybe_patch_session_model(session, agent),
+         {:ok, {session, agent, space}} <- resolve_session_and_agent(space_id, session_id),
+         :ok <- maybe_patch_session_runtime(session, agent, space),
          {:ok, _pid} <-
            chat_client().start_stream(
              stream_to: Keyword.fetch!(opts, :stream_to),
@@ -36,9 +38,14 @@ defmodule OpenClawZalify.Chat do
              session_key: session.openclaw_session_key,
              message: message,
              idempotency_key: Keyword.get(opts, :idempotency_key, Ecto.UUID.generate()),
-             timeout_ms: Keyword.get(opts, :timeout_ms, Config.openclaw_chat_timeout_ms())
+             timeout_ms:
+               Keyword.get(
+                 opts,
+                 :timeout_ms,
+                 space.timeout_ms || Config.openclaw_chat_timeout_ms()
+               )
            ) do
-      {:ok, %{session: session, agent: agent}}
+      {:ok, %{session: session, agent: agent, space: space}}
     end
   end
 
@@ -74,37 +81,41 @@ defmodule OpenClawZalify.Chat do
   def serialize_session(%SessionRecord{} = session) do
     %{
       id: session.id,
-      workspace_id: session.workspace_id,
+      space_id: session.workspace_id,
       agent_id: session.agent_id,
       status: session.status
     }
   end
 
-  defp resolve_session_and_agent(workspace_id, nil) do
-    with :ok <- validate_workspace_id(workspace_id),
-         {:ok, %AgentRecord{} = agent} <- ensure_workspace_agent(workspace_id),
-         {:ok, session} <- create_session(workspace_id, agent) do
-      {:ok, {session, agent}}
+  defp resolve_session_and_agent(space_id, nil) do
+    with :ok <- validate_space_id(space_id),
+         {:ok, {%Space{} = space, %AgentRecord{} = agent}} <- ensure_space_agent(space_id),
+         {:ok, session} <- create_session(space.id, agent) do
+      {:ok, {session, agent, space}}
     end
   end
 
-  defp resolve_session_and_agent(workspace_id, session_id) do
+  defp resolve_session_and_agent(space_id, session_id) do
     with {:ok, %SessionRecord{} = session} <- fetch_session(session_id),
-         :ok <- maybe_validate_workspace_match(session, workspace_id),
-         {:ok, %AgentRecord{} = agent} <- ensure_workspace_agent(session.workspace_id) do
-      {:ok, {session, agent}}
+         :ok <- maybe_validate_space_match(session, space_id),
+         {:ok, {%Space{} = space, %AgentRecord{} = agent}} <-
+           ensure_space_agent(session.workspace_id) do
+      {:ok, {session, agent, space}}
     end
   end
 
-  defp ensure_workspace_agent(workspace_id) do
-    case agents_service().get_workspace_agent(workspace_id) do
-      {:ok, %AgentRecord{} = agent} ->
-        {:ok, agent}
+  defp ensure_space_agent(space_id) do
+    case spaces_service().get_space_agent(space_id) do
+      {:ok, %{space: %Space{} = space, agent: %AgentRecord{} = agent}} ->
+        {:ok, {space, agent}}
 
       {:ok, nil} ->
-        case agents_service().provision_workspace_agent(workspace_id, %{}) do
-          {:ok, %{agent: %AgentRecord{} = agent}} -> {:ok, agent}
-          {:error, reason} -> {:error, reason}
+        case spaces_service().provision_space_agent(space_id, %{}) do
+          {:ok, %{space: %Space{} = space, agent: %AgentRecord{} = agent}} ->
+            {:ok, {space, agent}}
+
+          {:error, reason} ->
+            {:error, reason}
         end
 
       {:error, reason} ->
@@ -112,12 +123,12 @@ defmodule OpenClawZalify.Chat do
     end
   end
 
-  defp create_session(workspace_id, %AgentRecord{} = agent) do
+  defp create_session(space_id, %AgentRecord{} = agent) do
     session_id = Ecto.UUID.generate()
 
     session_store().create_session(%{
       id: session_id,
-      workspace_id: workspace_id,
+      workspace_id: space_id,
       agent_id: agent.agent_id,
       openclaw_session_key: openclaw_session_key(agent.agent_id, session_id),
       status: "active"
@@ -132,23 +143,38 @@ defmodule OpenClawZalify.Chat do
     end
   end
 
-  defp maybe_patch_session_model(_session, %AgentRecord{model_ref: nil}), do: :ok
-  defp maybe_patch_session_model(_session, %AgentRecord{model_ref: ""}), do: :ok
+  defp maybe_patch_session_runtime(
+         %SessionRecord{} = session,
+         %AgentRecord{} = agent,
+         %Space{} = space
+       ) do
+    patch =
+      %{
+        model_ref: normalize_optional_text(agent.model_ref),
+        reasoning_level: normalize_optional_text(space.reasoning_level)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
 
-  defp maybe_patch_session_model(%SessionRecord{} = session, %AgentRecord{model_ref: model_ref}) do
-    case chat_gateway().patch_session_model(session.openclaw_session_key, model_ref) do
-      {:ok, _payload} -> :ok
-      {:error, reason} -> {:error, reason}
+    case map_size(patch) do
+      0 ->
+        :ok
+
+      _size ->
+        case chat_gateway().patch_session(session.openclaw_session_key, patch) do
+          {:ok, _payload} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 
-  defp maybe_validate_workspace_match(_session, nil), do: :ok
+  defp maybe_validate_space_match(_session, nil), do: :ok
 
-  defp maybe_validate_workspace_match(%SessionRecord{} = session, workspace_id) do
-    if session.workspace_id == workspace_id do
+  defp maybe_validate_space_match(%SessionRecord{} = session, space_id) do
+    if session.workspace_id == space_id do
       :ok
     else
-      {:error, {:validation, %{workspace_id: ["does not match the existing session"]}}}
+      {:error, {:validation, %{space_id: ["does not match the existing session"]}}}
     end
   end
 
@@ -156,13 +182,12 @@ defmodule OpenClawZalify.Chat do
     "agent:#{agent_id}:web:direct:#{String.downcase(session_id)}"
   end
 
-  defp validate_workspace_id(nil),
-    do: {:error, {:validation, %{workspace_id: ["is required when session_id is missing"]}}}
+  defp validate_space_id(nil),
+    do: {:error, {:validation, %{space_id: ["is required when session_id is missing"]}}}
 
-  defp validate_workspace_id(""),
-    do: {:error, {:validation, %{workspace_id: ["can't be blank"]}}}
+  defp validate_space_id(""), do: {:error, {:validation, %{space_id: ["can't be blank"]}}}
 
-  defp validate_workspace_id(_workspace_id), do: :ok
+  defp validate_space_id(_space_id), do: :ok
 
   defp validate_session_id(""), do: {:error, {:validation, %{session_id: ["can't be blank"]}}}
   defp validate_session_id(_session_id), do: :ok
@@ -189,8 +214,8 @@ defmodule OpenClawZalify.Chat do
 
   defp normalize_optional_text(_value), do: nil
 
-  defp agents_service do
-    Application.get_env(:openclaw_zalify, :agents_service, Agents)
+  defp spaces_service do
+    Application.get_env(:openclaw_zalify, :spaces_service, Spaces)
   end
 
   defp session_store do

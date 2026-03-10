@@ -203,9 +203,9 @@ defmodule OpenClawZalify.AgentsTest do
                display_name: "Shop 01 Assistant"
              })
 
-    assert agent.agent_id == "zalify-shop-01"
+    assert agent.agent_id == "space-shop-01"
     assert agent.display_name == "Shop 01 Assistant"
-    assert agent.workspace_path == "/home/node/.openclaw/workspace/zalify/zalify-shop-01"
+    assert agent.workspace_path == "/home/node/.openclaw/workspace/spaces/space-shop-01"
     assert length(FakeAdminClient.create_calls()) == 1
     assert length(FakeAdminClient.file_calls()) == 3
   end
@@ -216,12 +216,12 @@ defmodule OpenClawZalify.AgentsTest do
     assert {:ok, %{created?: false, agent: agent}} =
              Agents.provision_workspace_agent("shop-02", %{})
 
-    assert agent.agent_id == "zalify-shop-02"
+    assert agent.agent_id == "space-shop-02"
     assert length(FakeAdminClient.create_calls()) == 1
   end
 
   test "normalizes the workspace id into a stable agent name" do
-    assert Agents.agent_name_for_workspace(" Demo / CN #1 ") == "zalify-demo-cn-1"
+    assert Agents.agent_name_for_workspace(" Demo / CN #1 ") == "space-demo-cn-1"
   end
 
   test "deletes an existing workspace agent and removes the local mapping" do
@@ -232,7 +232,7 @@ defmodule OpenClawZalify.AgentsTest do
              Agents.delete_workspace_agent("shop-delete")
 
     assert deleted.agent_id == created.agent_id
-    assert FakeAdminClient.delete_calls() == ["zalify-shop-delete"]
+    assert FakeAdminClient.delete_calls() == ["space-shop-delete"]
     assert {:ok, nil} = Agents.get_workspace_agent("shop-delete")
   end
 
@@ -253,6 +253,6 @@ defmodule OpenClawZalify.AgentsTest do
 
     assert fetched_agent.agent_id == agent.agent_id
     assert file["missing"] == false
-    assert file["content"] =~ "Workspace ID: shop-files"
+    assert file["content"] =~ "Space ID: shop-files"
   end
 end

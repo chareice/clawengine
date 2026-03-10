@@ -4,6 +4,7 @@ defmodule OpenClawZalify.ChatTest do
   alias OpenClawZalify.Agents.AgentRecord
   alias OpenClawZalify.Chat
   alias OpenClawZalify.Chat.SessionRecord
+  alias OpenClawZalify.Engine.Space
 
   defmodule MemoryChatStore do
     @behaviour OpenClawZalify.Chat.Store
@@ -39,40 +40,84 @@ defmodule OpenClawZalify.ChatTest do
     end
   end
 
-  defmodule FakeAgentsService do
+  defmodule FakeSpacesService do
     def child_spec(_opts) do
       %{id: __MODULE__, start: {__MODULE__, :start_link, [[]]}}
     end
 
     def start_link(_opts) do
-      Agent.start_link(fn -> %{records: %{}} end, name: __MODULE__)
+      Agent.start_link(fn -> %{spaces: %{}, agents: %{}} end, name: __MODULE__)
     end
 
-    def reset!, do: Agent.update(__MODULE__, fn _state -> %{records: %{}} end)
+    def reset!, do: Agent.update(__MODULE__, fn _state -> %{spaces: %{}, agents: %{}} end)
 
-    def put!(workspace_id, %AgentRecord{} = record) do
+    def put!(space_id, %Space{} = space, %AgentRecord{} = agent) do
       Agent.update(__MODULE__, fn state ->
-        %{state | records: Map.put(state.records, workspace_id, record)}
+        %{
+          state
+          | spaces: Map.put(state.spaces, space_id, space),
+            agents: Map.put(state.agents, space_id, agent)
+        }
       end)
     end
 
-    def get_workspace_agent(workspace_id) do
-      {:ok, Agent.get(__MODULE__, &Map.get(&1.records, workspace_id))}
+    def get_space_agent(space_id) do
+      {:ok,
+       Agent.get(__MODULE__, fn state ->
+         case {Map.get(state.spaces, space_id), Map.get(state.agents, space_id)} do
+           {%Space{} = space, %AgentRecord{} = agent} -> %{space: space, agent: agent}
+           _other -> nil
+         end
+       end)}
     end
 
-    def provision_workspace_agent(workspace_id, _attrs) do
-      record = %AgentRecord{
-        workspace_id: workspace_id,
-        agent_id: "zalify-#{workspace_id}",
-        status: "active",
-        runtime_mode: "shared",
-        workspace_path: "/tmp/#{workspace_id}",
-        display_name: "Agent #{workspace_id}",
-        memory_enabled: true
-      }
+    def provision_space_agent(space_id, _attrs) do
+      space = build_space(space_id, %{})
 
-      put!(workspace_id, record)
-      {:ok, %{created?: true, agent: record}}
+      agent =
+        %AgentRecord{
+          workspace_id: space_id,
+          agent_id: "space-#{space_id}",
+          status: "active",
+          runtime_mode: "shared",
+          workspace_path: "/tmp/#{space_id}",
+          display_name: "#{space.name} Assistant",
+          model_ref: space.model_ref,
+          memory_enabled: space.memory_enabled
+        }
+
+      put!(space_id, space, agent)
+      {:ok, %{created?: true, space: space, agent: agent}}
+    end
+
+    def build_space(space_id, overrides) do
+      struct(
+        Space,
+        Map.merge(
+          %{
+            id: space_id,
+            name: "Space #{space_id}",
+            slug: space_id,
+            display_name: "Space #{space_id} Assistant",
+            agent_name: "space-#{space_id}",
+            workspace_path: "/tmp/#{space_id}",
+            template_set: "merchant-support",
+            model_profile_id: "default",
+            tool_profile_id: "default",
+            model_ref: nil,
+            reasoning_level: nil,
+            timeout_ms: 60_000,
+            role_prompt: nil,
+            memory_enabled: true,
+            identity_md: "# identity",
+            soul_md: "# soul",
+            user_md: "# user",
+            variables: %{},
+            raw: %{}
+          },
+          overrides
+        )
+      )
     end
   end
 
@@ -100,11 +145,11 @@ defmodule OpenClawZalify.ChatTest do
     def history_calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.history_calls))
     def abort_calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.abort_calls))
 
-    def patch_session_model(session_key, model_ref) do
+    def patch_session(session_key, attrs) do
       Agent.update(__MODULE__, fn state ->
         %{
           state
-          | patch_calls: [%{session_key: session_key, model_ref: model_ref} | state.patch_calls]
+          | patch_calls: [%{session_key: session_key, attrs: attrs} | state.patch_calls]
         }
       end)
 
@@ -171,23 +216,23 @@ defmodule OpenClawZalify.ChatTest do
 
   setup do
     start_supervised!(MemoryChatStore)
-    start_supervised!(FakeAgentsService)
+    start_supervised!(FakeSpacesService)
     start_supervised!(FakeChatGateway)
     start_supervised!(FakeChatClient)
 
     MemoryChatStore.reset!()
-    FakeAgentsService.reset!()
+    FakeSpacesService.reset!()
     FakeChatGateway.reset!()
     FakeChatClient.reset!()
 
     original_env = %{
-      agents_service: Application.get_env(:openclaw_zalify, :agents_service),
+      spaces_service: Application.get_env(:openclaw_zalify, :spaces_service),
       chat_store: Application.get_env(:openclaw_zalify, :chat_store),
       openclaw_chat_gateway: Application.get_env(:openclaw_zalify, :openclaw_chat_gateway),
       openclaw_chat_client: Application.get_env(:openclaw_zalify, :openclaw_chat_client)
     }
 
-    Application.put_env(:openclaw_zalify, :agents_service, FakeAgentsService)
+    Application.put_env(:openclaw_zalify, :spaces_service, FakeSpacesService)
     Application.put_env(:openclaw_zalify, :chat_store, MemoryChatStore)
     Application.put_env(:openclaw_zalify, :openclaw_chat_gateway, FakeChatGateway)
     Application.put_env(:openclaw_zalify, :openclaw_chat_client, FakeChatClient)
@@ -204,16 +249,17 @@ defmodule OpenClawZalify.ChatTest do
   test "send_message creates a chat session and starts a stream" do
     stream_ref = %{request_id: "req-1"}
 
-    assert {:ok, %{session: session, agent: agent}} =
+    assert {:ok, %{session: session, agent: agent, space: space}} =
              Chat.send_message("shop-chat", nil, "Hello world",
                stream_to: self(),
                stream_ref: stream_ref
              )
 
     assert session.workspace_id == "shop-chat"
-    assert session.agent_id == "zalify-shop-chat"
-    assert session.openclaw_session_key == "agent:zalify-shop-chat:web:direct:#{session.id}"
-    assert agent.agent_id == "zalify-shop-chat"
+    assert session.agent_id == "space-shop-chat"
+    assert session.openclaw_session_key == "agent:space-shop-chat:web:direct:#{session.id}"
+    assert agent.agent_id == "space-shop-chat"
+    assert space.id == "shop-chat"
 
     assert_receive {:openclaw_chat_stream, ^stream_ref,
                     {:run_started, %{session_id: session_id, run_id: "run-test-1"}}}
@@ -223,14 +269,22 @@ defmodule OpenClawZalify.ChatTest do
     [call] = FakeChatClient.calls()
     assert call.session_id == session.id
     assert call.message == "Hello world"
+    assert call.timeout_ms == 60_000
   end
 
-  test "send_message applies the agent model override before streaming" do
-    FakeAgentsService.put!(
+  test "send_message applies the space runtime overrides before streaming" do
+    space =
+      FakeSpacesService.build_space("shop-model", %{
+        model_ref: "deepseek/deepseek-chat",
+        reasoning_level: "off"
+      })
+
+    FakeSpacesService.put!(
       "shop-model",
+      space,
       %AgentRecord{
         workspace_id: "shop-model",
-        agent_id: "zalify-shop-model",
+        agent_id: "space-shop-model",
         status: "active",
         runtime_mode: "shared",
         workspace_path: "/tmp/shop-model",
@@ -249,7 +303,7 @@ defmodule OpenClawZalify.ChatTest do
     assert [
              %{
                session_key: session_key,
-               model_ref: "deepseek/deepseek-chat"
+               attrs: %{model_ref: "deepseek/deepseek-chat", reasoning_level: "off"}
              }
            ] = FakeChatGateway.patch_calls()
 

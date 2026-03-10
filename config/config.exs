@@ -1,6 +1,8 @@
 import Config
 
 config :openclaw_zalify,
+  engine_registry: OpenClawZalify.Engine.Registry,
+  spaces_service: OpenClawZalify.Spaces,
   agents_service: OpenClawZalify.Agents,
   agents_store: OpenClawZalify.Agents.PostgresStore,
   openclaw_admin_client: OpenClawZalify.OpenClaw.AdminClient,

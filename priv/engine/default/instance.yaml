@@ -1,0 +1,12 @@
+id: demo-business
+name: Demo Business
+
+agent:
+  name_template: "{{instance.id}}-{{space.slug}}"
+  workspace_path_template: "{{openclaw.workspace_root}}/{{instance.id}}/{{space.slug}}"
+
+defaults:
+  template_set: merchant-support
+  model_profile: default
+  tool_profile: default
+  memory_enabled: true

@@ -66,9 +66,10 @@ defmodule OpenClawZalifyWeb.ChatSocket do
   defp handle_payload(%{"type" => "send_message"} = payload, state) do
     request_id = Map.get(payload, "request_id")
     stream_ref = %{request_id: request_id}
+    space_id = Map.get(payload, "space_id") || Map.get(payload, "workspace_id")
 
     case chat_service().send_message(
-           Map.get(payload, "workspace_id"),
+           space_id,
            Map.get(payload, "session_id"),
            Map.get(payload, "message", ""),
            stream_to: self(),
@@ -159,6 +160,15 @@ defmodule OpenClawZalifyWeb.ChatSocket do
       "request_id" => request_id,
       "error" => "not_found",
       "details" => %{"session" => ["was not found"]}
+    }
+  end
+
+  defp error_frame({:not_found, :space}, request_id) do
+    %{
+      "type" => "error",
+      "request_id" => request_id,
+      "error" => "not_found",
+      "details" => %{"space" => ["was not found in the instance config"]}
     }
   end
 

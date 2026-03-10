@@ -1,0 +1,5 @@
+id: deepseek-fast
+label: DeepSeek Fast
+model_ref: deepseek/deepseek-chat
+reasoning_level: off
+timeout_ms: 45000

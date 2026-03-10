@@ -6,16 +6,29 @@ defmodule OpenClawZalify.OpenClaw.ChatGateway do
   alias OpenClawZalify.Config
   alias OpenClawZalify.OpenClaw.Client
 
-  @callback patch_session_model(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  @callback patch_session(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @callback chat_history(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}
   @callback abort_chat(String.t(), String.t() | nil) :: {:ok, map()} | {:error, term()}
 
-  @spec patch_session_model(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def patch_session_model(session_key, model_ref) do
-    request("sessions.patch", %{
-      "key" => session_key,
-      "model" => model_ref
-    })
+  @spec patch_session(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def patch_session(session_key, attrs) when is_binary(session_key) and is_map(attrs) do
+    params =
+      attrs
+      |> Enum.reduce(%{"key" => session_key}, fn
+        {:model_ref, value}, acc when is_binary(value) ->
+          Map.put(acc, "model", value)
+
+        {:reasoning_level, value}, acc when is_binary(value) ->
+          Map.put(acc, "reasoningLevel", value)
+
+        {_key, nil}, acc ->
+          acc
+
+        {_key, _value}, acc ->
+          acc
+      end)
+
+    request("sessions.patch", params)
   end
 
   @spec chat_history(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}

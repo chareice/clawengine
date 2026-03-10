@@ -5,13 +5,13 @@ defmodule OpenClawZalifyWeb.ChatSocketTest do
   alias OpenClawZalifyWeb.ChatSocket
 
   defmodule FakeChatService do
-    def send_message(workspace_id, session_id, message, opts) do
+    def send_message(space_id, session_id, message, opts) do
       session =
         %SessionRecord{
           id: session_id || "session-1",
-          workspace_id: workspace_id || "shop-ws",
-          agent_id: "zalify-shop-ws",
-          openclaw_session_key: "agent:zalify-shop-ws:web:direct:session-1",
+          workspace_id: space_id || "shop-ws",
+          agent_id: "space-shop-ws",
+          openclaw_session_key: "agent:space-shop-ws:web:direct:session-1",
           status: "active"
         }
 
@@ -57,8 +57,8 @@ defmodule OpenClawZalifyWeb.ChatSocketTest do
          session: %SessionRecord{
            id: session_id,
            workspace_id: "shop-ws",
-           agent_id: "zalify-shop-ws",
-           openclaw_session_key: "agent:zalify-shop-ws:web:direct:#{session_id}",
+           agent_id: "space-shop-ws",
+           openclaw_session_key: "agent:space-shop-ws:web:direct:#{session_id}",
            status: "active"
          },
          history: %{"messages" => [%{"role" => "assistant"}]}
@@ -71,8 +71,8 @@ defmodule OpenClawZalifyWeb.ChatSocketTest do
          session: %SessionRecord{
            id: session_id,
            workspace_id: "shop-ws",
-           agent_id: "zalify-shop-ws",
-           openclaw_session_key: "agent:zalify-shop-ws:web:direct:#{session_id}",
+           agent_id: "space-shop-ws",
+           openclaw_session_key: "agent:space-shop-ws:web:direct:#{session_id}",
            status: "active"
          },
          result: %{"aborted" => true, "runIds" => [run_id]}
@@ -107,7 +107,7 @@ defmodule OpenClawZalifyWeb.ChatSocketTest do
       Jason.encode!(%{
         "type" => "send_message",
         "request_id" => "req-send",
-        "workspace_id" => "shop-ws",
+        "space_id" => "shop-ws",
         "message" => "hello over ws"
       })
 
@@ -117,7 +117,7 @@ defmodule OpenClawZalifyWeb.ChatSocketTest do
     assert %{
              "type" => "session_ready",
              "request_id" => "req-send",
-             "session" => %{"workspace_id" => "shop-ws", "id" => "session-1"}
+             "session" => %{"space_id" => "shop-ws", "id" => "session-1"}
            } = Jason.decode!(raw)
 
     assert_receive started_message =

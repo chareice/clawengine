@@ -7,6 +7,8 @@ defmodule OpenClawZalify.Agents do
   alias OpenClawZalify.Config
 
   @type provision_attrs :: %{
+          optional(:agent_name) => String.t(),
+          optional(:workspace_path) => String.t(),
           optional(:display_name) => String.t(),
           optional(:role_prompt) => String.t(),
           optional(:identity_md) => String.t(),
@@ -110,12 +112,15 @@ defmodule OpenClawZalify.Agents do
       "" -> "workspace"
       normalized -> normalized
     end
-    |> then(&"zalify-#{&1}")
+    |> then(&"space-#{&1}")
   end
 
   defp create_workspace_agent(workspace_id, attrs) do
-    agent_name = agent_name_for_workspace(workspace_id)
-    workspace_path = Path.join(Config.openclaw_workspace_root(), agent_name)
+    agent_name = present_text(attrs[:agent_name]) || agent_name_for_workspace(workspace_id)
+
+    workspace_path =
+      present_text(attrs[:workspace_path]) ||
+        Path.join(Config.openclaw_workspace_root(), agent_name)
 
     with {:ok, created_agent} <-
            admin_client().create_agent(%{
@@ -164,7 +169,7 @@ defmodule OpenClawZalify.Agents do
   defp validate_file_name(_name), do: :ok
 
   defp display_name(workspace_id, attrs) do
-    present_text(attrs[:display_name]) || "Zalify Agent #{workspace_id}"
+    present_text(attrs[:display_name]) || "Space Agent #{workspace_id}"
   end
 
   defp identity_md(workspace_id, attrs) do
@@ -172,9 +177,9 @@ defmodule OpenClawZalify.Agents do
       """
       # Identity
 
-      - Workspace ID: #{workspace_id}
+      - Space ID: #{workspace_id}
       - Display Name: #{display_name(workspace_id, attrs)}
-      - Platform: Zalify
+      - Runtime: OpenClaw Engine
       """
   end
 
@@ -183,8 +188,8 @@ defmodule OpenClawZalify.Agents do
       """
       # Soul
 
-      You are the workspace assistant for Zalify merchant #{workspace_id}.
-      Prefer precise, operational answers and use Zalify tools when data is required.
+      You are the assistant for space #{workspace_id}.
+      Prefer precise, operational answers and use business tools when data is required.
       """
   end
 
@@ -193,7 +198,7 @@ defmodule OpenClawZalify.Agents do
       """
       # User
 
-      The current workspace is #{workspace_id}.
+      The current space is #{workspace_id}.
       Keep responses concise, helpful, and action-oriented.
       """
   end

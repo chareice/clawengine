@@ -1,0 +1,5 @@
+id: default
+label: Balanced Default
+model_ref:
+reasoning_level: off
+timeout_ms: 60000

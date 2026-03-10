@@ -4,108 +4,190 @@ defmodule OpenClawZalifyWeb.RouterAgentsTest do
   import Plug.Test
 
   alias OpenClawZalify.Agents.AgentRecord
+  alias OpenClawZalify.Engine.Instance
+  alias OpenClawZalify.Engine.Snapshot
+  alias OpenClawZalify.Engine.Space
   alias OpenClawZalifyWeb.Router
 
-  defmodule FakeAgentsService do
+  defmodule FakeSpacesService do
     def child_spec(_opts) do
       %{id: __MODULE__, start: {__MODULE__, :start_link, [[]]}}
     end
 
     def start_link(_opts) do
-      Agent.start_link(fn -> %{records: %{}, files: %{}} end, name: __MODULE__)
+      Agent.start_link(fn -> %{spaces: %{}, agents: %{}, files: %{}} end, name: __MODULE__)
     end
 
-    def reset!, do: Agent.update(__MODULE__, fn _state -> %{records: %{}, files: %{}} end)
+    def reset!,
+      do: Agent.update(__MODULE__, fn _state -> %{spaces: %{}, agents: %{}, files: %{}} end)
 
-    def put!(workspace_id, record) do
+    def put_space!(%Space{} = space) do
       Agent.update(__MODULE__, fn state ->
-        %{state | records: Map.put(state.records, workspace_id, record)}
+        %{state | spaces: Map.put(state.spaces, space.id, space)}
       end)
     end
 
-    def put_files!(workspace_id, files) do
+    def put_agent!(space_id, %AgentRecord{} = record) do
       Agent.update(__MODULE__, fn state ->
-        %{state | files: Map.put(state.files, workspace_id, files)}
+        %{state | agents: Map.put(state.agents, space_id, record)}
       end)
     end
 
-    def get_workspace_agent(workspace_id) do
-      {:ok, Agent.get(__MODULE__, &Map.get(&1.records, workspace_id))}
+    def put_files!(space_id, files) do
+      Agent.update(__MODULE__, fn state ->
+        %{state | files: Map.put(state.files, space_id, files)}
+      end)
     end
 
-    def provision_workspace_agent(workspace_id, attrs) do
-      record =
-        %AgentRecord{
-          workspace_id: workspace_id,
-          agent_id: "zalify-#{workspace_id}",
-          status: "active",
-          runtime_mode: "shared",
-          workspace_path: "/tmp/#{workspace_id}",
-          display_name: attrs[:display_name] || "Default Agent",
-          role_prompt: attrs[:role_prompt],
-          identity_md: attrs[:identity_md],
-          soul_md: attrs[:soul_md],
-          user_md: attrs[:user_md],
-          model_ref: attrs[:model_ref],
-          memory_enabled: attrs[:memory_enabled]
-        }
-
-      put!(workspace_id, record)
-      put_files!(workspace_id, default_files_for(record))
-      {:ok, %{created?: true, agent: record}}
+    def get_instance do
+      {:ok,
+       %Instance{
+         id: "demo-business",
+         name: "Demo Business",
+         agent_name_template: "{{instance.id}}-{{space.slug}}",
+         workspace_path_template: "/tmp/demo-business/{{space.slug}}",
+         default_template_set: "merchant-support",
+         default_model_profile_id: "default",
+         default_tool_profile_id: "default",
+         default_memory_enabled: true,
+         config_root: "/tmp/engine"
+       }}
     end
 
-    def delete_workspace_agent(workspace_id) do
+    def reload_engine_config do
+      {:ok,
+       %Snapshot{
+         config_root: "/tmp/engine",
+         instance: elem(get_instance(), 1),
+         spaces: Agent.get(__MODULE__, & &1.spaces),
+         model_profiles: %{},
+         loaded_at: DateTime.utc_now()
+       }}
+    end
+
+    def list_spaces do
+      {:ok,
+       Agent.get(__MODULE__, fn state ->
+         state.spaces
+         |> Map.values()
+         |> Enum.sort_by(fn space -> space.id end)
+       end)}
+    end
+
+    def get_space(space_id) do
+      {:ok, Agent.get(__MODULE__, &Map.get(&1.spaces, space_id))}
+    end
+
+    def get_space_agent(space_id) do
+      Agent.get(__MODULE__, fn state ->
+        case {Map.get(state.spaces, space_id), Map.get(state.agents, space_id)} do
+          {%Space{} = space, %AgentRecord{} = agent} -> {:ok, %{space: space, agent: agent}}
+          {%Space{}, nil} -> {:ok, nil}
+          {nil, _agent} -> {:error, {:not_found, :space}}
+        end
+      end)
+    end
+
+    def provision_space_agent(space_id, attrs) do
       Agent.get_and_update(__MODULE__, fn state ->
-        record = Map.get(state.records, workspace_id)
+        case Map.get(state.spaces, space_id) do
+          nil ->
+            {{:error, {:not_found, :space}}, state}
 
+          %Space{} = space ->
+            existing = Map.get(state.agents, space_id)
+
+            record =
+              existing ||
+                %AgentRecord{
+                  workspace_id: space_id,
+                  agent_id: space.agent_name,
+                  status: "active",
+                  runtime_mode: "shared",
+                  workspace_path: space.workspace_path,
+                  display_name: attrs[:display_name] || space.display_name,
+                  role_prompt: attrs[:role_prompt] || space.role_prompt,
+                  identity_md: attrs[:identity_md] || space.identity_md,
+                  soul_md: attrs[:soul_md] || space.soul_md,
+                  user_md: attrs[:user_md] || space.user_md,
+                  model_ref: attrs[:model_ref] || space.model_ref,
+                  memory_enabled: Map.get(attrs, :memory_enabled, space.memory_enabled)
+                }
+
+            files = default_files_for(record)
+
+            result = {:ok, %{created?: is_nil(existing), space: space, agent: record}}
+
+            next_state = %{
+              state
+              | agents: Map.put(state.agents, space_id, record),
+                files: Map.put(state.files, space_id, files)
+            }
+
+            {result, next_state}
+        end
+      end)
+    end
+
+    def delete_space_agent(space_id) do
+      Agent.get_and_update(__MODULE__, fn state ->
         result =
-          case record do
-            nil -> {:ok, %{deleted?: false, agent: nil}}
-            _record -> {:ok, %{deleted?: true, agent: record}}
+          case Map.get(state.agents, space_id) do
+            nil ->
+              {:ok, %{deleted?: false, space: Map.get(state.spaces, space_id), agent: nil}}
+
+            %AgentRecord{} = record ->
+              {:ok, %{deleted?: true, space: Map.get(state.spaces, space_id), agent: record}}
           end
 
         next_state = %{
           state
-          | records: Map.delete(state.records, workspace_id),
-            files: Map.delete(state.files, workspace_id)
+          | agents: Map.delete(state.agents, space_id),
+            files: Map.delete(state.files, space_id)
         }
 
         {result, next_state}
       end)
     end
 
-    def list_workspace_agent_files(workspace_id) do
+    def list_space_agent_files(space_id) do
       Agent.get(__MODULE__, fn state ->
-        case Map.get(state.records, workspace_id) do
-          nil ->
+        case {Map.get(state.spaces, space_id), Map.get(state.agents, space_id)} do
+          {%Space{} = space, %AgentRecord{} = agent} ->
+            {:ok, %{space: space, agent: agent, files: Map.get(state.files, space_id, [])}}
+
+          {%Space{}, nil} ->
             {:ok, nil}
 
-          record ->
-            {:ok, %{agent: record, files: Map.get(state.files, workspace_id, [])}}
+          {nil, _agent} ->
+            {:error, {:not_found, :space}}
         end
       end)
     end
 
-    def get_workspace_agent_file(workspace_id, name) do
+    def get_space_agent_file(space_id, name) do
       Agent.get(__MODULE__, fn state ->
-        case Map.get(state.records, workspace_id) do
-          nil ->
-            {:ok, nil}
-
-          record ->
+        case {Map.get(state.spaces, space_id), Map.get(state.agents, space_id)} do
+          {%Space{} = space, %AgentRecord{} = agent} ->
             file =
               state.files
-              |> Map.get(workspace_id, [])
+              |> Map.get(space_id, [])
               |> Enum.find(fn entry -> entry["name"] == name end)
 
             {:ok,
              %{
-               agent: record,
+               space: space,
+               agent: agent,
                file:
                  file ||
-                   %{"name" => name, "path" => "/tmp/#{workspace_id}/#{name}", "missing" => true}
+                   %{"name" => name, "path" => "/tmp/#{space_id}/#{name}", "missing" => true}
              }}
+
+          {%Space{}, nil} ->
+            {:ok, nil}
+
+          {nil, _agent} ->
+            {:error, {:not_found, :space}}
         end
       end)
     end
@@ -141,34 +223,93 @@ defmodule OpenClawZalifyWeb.RouterAgentsTest do
   end
 
   setup do
-    start_supervised!(FakeAgentsService)
-    FakeAgentsService.reset!()
+    start_supervised!(FakeSpacesService)
+    FakeSpacesService.reset!()
 
-    original_service = Application.get_env(:openclaw_zalify, :agents_service)
-    Application.put_env(:openclaw_zalify, :agents_service, FakeAgentsService)
+    FakeSpacesService.put_space!(%Space{
+      id: "shop-01",
+      name: "Shop 01",
+      slug: "shop-01",
+      display_name: "Shop 01 Assistant",
+      agent_name: "demo-business-shop-01",
+      workspace_path: "/tmp/demo-business/shop-01",
+      template_set: "merchant-support",
+      model_profile_id: "default",
+      tool_profile_id: "default",
+      model_ref: nil,
+      reasoning_level: "off",
+      timeout_ms: 60_000,
+      role_prompt: nil,
+      memory_enabled: true,
+      identity_md: "# identity",
+      soul_md: "# soul",
+      user_md: "# user",
+      variables: %{"region" => "sg"},
+      raw: %{}
+    })
+
+    FakeSpacesService.put_space!(%Space{
+      id: "shop-02",
+      name: "Shop 02",
+      slug: "shop-02",
+      display_name: "Stored Agent",
+      agent_name: "demo-business-shop-02",
+      workspace_path: "/tmp/demo-business/shop-02",
+      template_set: "merchant-support",
+      model_profile_id: "default",
+      tool_profile_id: "default",
+      model_ref: "deepseek/deepseek-chat",
+      reasoning_level: "off",
+      timeout_ms: 60_000,
+      role_prompt: nil,
+      memory_enabled: true,
+      identity_md: "# identity",
+      soul_md: "# soul",
+      user_md: "# user",
+      variables: %{},
+      raw: %{}
+    })
+
+    original_spaces_service = Application.get_env(:openclaw_zalify, :spaces_service)
+    Application.put_env(:openclaw_zalify, :spaces_service, FakeSpacesService)
 
     on_exit(fn ->
-      Application.put_env(:openclaw_zalify, :agents_service, original_service)
+      Application.put_env(:openclaw_zalify, :spaces_service, original_spaces_service)
     end)
 
     :ok
   end
 
-  test "GET workspace agent returns 404 when no mapping exists" do
+  test "GET instance returns the loaded business config" do
     conn =
       :get
-      |> conn("/api/workspaces/shop-404/ai-agent")
+      |> conn("/api/instance")
       |> Router.call([])
 
-    assert conn.status == 404
-    assert Jason.decode!(conn.resp_body)["error"] == "not_found"
+    assert conn.status == 200
+
+    body = Jason.decode!(conn.resp_body)
+    assert body["instance"]["id"] == "demo-business"
+    assert body["instance"]["spaces_count"] == 2
   end
 
-  test "POST provision creates a workspace agent" do
+  test "GET spaces returns configured spaces" do
+    conn =
+      :get
+      |> conn("/api/spaces")
+      |> Router.call([])
+
+    assert conn.status == 200
+
+    body = Jason.decode!(conn.resp_body)
+    assert Enum.map(body["spaces"], & &1["id"]) == ["shop-01", "shop-02"]
+  end
+
+  test "POST provision creates a space agent from the engine config" do
     conn =
       :post
       |> conn(
-        "/api/workspaces/shop-01/ai-agent/provision",
+        "/api/spaces/shop-01/agent/provision",
         Jason.encode!(%{"display_name" => "Shop 01 Agent", "memory_enabled" => true})
       )
       |> put_req_header("content-type", "application/json")
@@ -178,55 +319,32 @@ defmodule OpenClawZalifyWeb.RouterAgentsTest do
 
     body = Jason.decode!(conn.resp_body)
     assert body["created"] == true
-    assert body["agent"]["workspace_id"] == "shop-01"
+    assert body["space"]["id"] == "shop-01"
+    assert body["agent"]["space_id"] == "shop-01"
     assert body["agent"]["profile"]["display_name"] == "Shop 01 Agent"
   end
 
-  test "GET workspace agent returns the stored mapping" do
-    FakeAgentsService.put!(
-      "shop-02",
-      %AgentRecord{
-        workspace_id: "shop-02",
-        agent_id: "zalify-shop-02",
-        status: "active",
-        runtime_mode: "shared",
-        workspace_path: "/tmp/shop-02",
-        display_name: "Stored Agent",
-        identity_md: "# identity",
-        soul_md: "# soul",
-        user_md: "# user",
-        memory_enabled: true
-      }
-    )
+  test "GET space returns the configured space and agent snapshot" do
+    assert {:ok, %{created?: true}} = FakeSpacesService.provision_space_agent("shop-02", %{})
 
     conn =
       :get
-      |> conn("/api/workspaces/shop-02/ai-agent")
+      |> conn("/api/spaces/shop-02")
       |> Router.call([])
 
     assert conn.status == 200
 
     body = Jason.decode!(conn.resp_body)
-    assert body["agent"]["agent_id"] == "zalify-shop-02"
-    assert body["agent"]["profile"]["display_name"] == "Stored Agent"
+    assert body["space"]["id"] == "shop-02"
+    assert body["agent"]["agent_id"] == "demo-business-shop-02"
   end
 
-  test "DELETE workspace agent removes the mapping" do
-    FakeAgentsService.put!(
-      "shop-delete",
-      %AgentRecord{
-        workspace_id: "shop-delete",
-        agent_id: "zalify-shop-delete",
-        status: "active",
-        runtime_mode: "shared",
-        workspace_path: "/tmp/shop-delete",
-        display_name: "Delete Agent"
-      }
-    )
+  test "DELETE space agent removes the mapping" do
+    assert {:ok, %{created?: true}} = FakeSpacesService.provision_space_agent("shop-01", %{})
 
     conn =
       :delete
-      |> conn("/api/workspaces/shop-delete/ai-agent")
+      |> conn("/api/spaces/shop-01/agent")
       |> Router.call([])
 
     assert conn.status == 200
@@ -234,24 +352,18 @@ defmodule OpenClawZalifyWeb.RouterAgentsTest do
 
     fetch_conn =
       :get
-      |> conn("/api/workspaces/shop-delete/ai-agent")
+      |> conn("/api/spaces/shop-01/agent")
       |> Router.call([])
 
     assert fetch_conn.status == 404
   end
 
-  test "GET workspace agent files returns file metadata" do
-    assert {:ok, %{created?: true}} =
-             FakeAgentsService.provision_workspace_agent("shop-files", %{
-               display_name: "Files Agent",
-               identity_md: "# identity",
-               soul_md: "# soul",
-               user_md: "# user"
-             })
+  test "GET space agent files returns file metadata" do
+    assert {:ok, %{created?: true}} = FakeSpacesService.provision_space_agent("shop-01", %{})
 
     conn =
       :get
-      |> conn("/api/workspaces/shop-files/ai-agent/files")
+      |> conn("/api/spaces/shop-01/agent/files")
       |> Router.call([])
 
     assert conn.status == 200
@@ -260,24 +372,17 @@ defmodule OpenClawZalifyWeb.RouterAgentsTest do
     assert Enum.map(body["files"], & &1["name"]) == ["IDENTITY.md", "SOUL.md", "USER.md"]
   end
 
-  test "GET workspace agent file returns the requested content" do
-    assert {:ok, %{created?: true}} =
-             FakeAgentsService.provision_workspace_agent("shop-file", %{
-               display_name: "File Agent",
-               identity_md: "# identity",
-               soul_md: "# soul",
-               user_md: "# user"
-             })
-
+  test "legacy workspace route aliases the generic space provision flow" do
     conn =
-      :get
-      |> conn("/api/workspaces/shop-file/ai-agent/files/IDENTITY.md")
+      :post
+      |> conn("/api/workspaces/shop-01/ai-agent/provision", Jason.encode!(%{}))
+      |> put_req_header("content-type", "application/json")
       |> Router.call([])
 
-    assert conn.status == 200
+    assert conn.status == 201
 
     body = Jason.decode!(conn.resp_body)
-    assert body["file"]["name"] == "IDENTITY.md"
-    assert body["file"]["content"] == "# identity"
+    assert body["space"]["id"] == "shop-01"
+    assert body["agent"]["space_id"] == "shop-01"
   end
 end

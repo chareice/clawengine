@@ -5,6 +5,7 @@ defmodule OpenClawZalify.ConfigTest do
 
   setup do
     original = %{
+      "ENGINE_CONFIG_ROOT" => System.get_env("ENGINE_CONFIG_ROOT"),
       "OPENCLAW_GATEWAY_URL" => System.get_env("OPENCLAW_GATEWAY_URL"),
       "OPENCLAW_GATEWAY_TOKEN" => System.get_env("OPENCLAW_GATEWAY_TOKEN"),
       "OPENCLAW_PROBE_TIMEOUT_MS" => System.get_env("OPENCLAW_PROBE_TIMEOUT_MS")
@@ -24,6 +25,7 @@ defmodule OpenClawZalify.ConfigTest do
   end
 
   test "builds the gateway config from environment variables" do
+    System.put_env("ENGINE_CONFIG_ROOT", "/tmp/openclaw-engine")
     System.put_env("OPENCLAW_GATEWAY_URL", "wss://gateway.example.com/ws")
     System.put_env("OPENCLAW_GATEWAY_TOKEN", "secret-token")
     System.put_env("OPENCLAW_PROBE_TIMEOUT_MS", "2500")
@@ -37,6 +39,7 @@ defmodule OpenClawZalify.ConfigTest do
     assert gateway.endpoint.port == 443
     assert gateway.endpoint.path == "/ws"
     assert Config.openclaw_probe_timeout_ms() == 2_500
+    assert Config.engine_config_root() == "/tmp/openclaw-engine"
   end
 
   test "falls back to defaults when values are missing or invalid" do

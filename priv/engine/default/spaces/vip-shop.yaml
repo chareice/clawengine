@@ -1,0 +1,13 @@
+id: vip-shop
+name: VIP Shop
+
+agent:
+  display_name: VIP Shop Concierge
+  model_profile: deepseek-fast
+  template_set: merchant-support
+  memory_enabled: true
+  role_prompt: Prioritize concise answers and escalate risky actions.
+
+variables:
+  region: us
+  storefront: vip.example.com

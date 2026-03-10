@@ -1,32 +1,37 @@
-# OpenClaw Zalify
+# OpenClaw Self-Hosted Space Engine
 
-Elixir bootstrap for Zalify's OpenClaw control plane.
+Elixir control plane for one business-owned OpenClaw instance.
 
-The initial scope is intentionally small:
+This engine is designed for the deployment model discussed in the architecture
+notes:
 
-- expose a tiny HTTP service for local health and readiness checks
-- keep OpenClaw running locally through Docker Compose
-- verify that the Elixir service can reach the OpenClaw Gateway
-- provision and query one OpenClaw agent per Zalify workspace
+- one business runs one engine instance
+- the instance serves many internal tenants as `spaces`
+- each space can resolve to one OpenClaw agent
+- model profiles, prompts, and defaults come from a config directory
+- sessions, runs, and agent bindings stay in PostgreSQL
 
-The current slice includes:
+Zalify is one example of a business that can run this engine, but the runtime is
+now driven by a generic `instance -> spaces -> agents -> sessions` model instead
+of hard-coded Zalify workspace rules.
 
-- a minimal OpenClaw admin RPC adapter over WebSocket
-- `POST /api/workspaces/:workspace_id/ai-agent/provision`
-- `GET /api/workspaces/:workspace_id/ai-agent`
-- `GET /api/workspaces/:workspace_id/ai-agent/files`
-- `GET /api/workspaces/:workspace_id/ai-agent/files/:name`
-- `DELETE /api/workspaces/:workspace_id/ai-agent`
-- `GET /ws/chat` for workspace-scoped chat sessions over WebSocket
-- PostgreSQL persistence for workspace-to-agent mappings and agent profiles
-- PostgreSQL persistence for `chat_sessions`
+## Current scope
+
+- load a business instance from `ENGINE_CONFIG_ROOT`
+- expose instance and space APIs over HTTP
+- provision one OpenClaw agent per configured space
+- proxy `agents.files.*` through the control plane
+- expose chat over `GET /ws/chat`
+- persist agent bindings and chat sessions in PostgreSQL
+- support business-configured model profiles for each space
 
 ## Stack
 
 - Elixir `1.18.4`
 - Erlang/OTP `27.3.4`
 - Bandit + Plug for the HTTP surface
-- Ecto + PostgreSQL for persistence
+- Ecto + PostgreSQL for runtime state
+- `yaml_elixir` for config-directory loading
 - Docker Compose for the local OpenClaw Gateway
 
 ## Local setup
@@ -44,78 +49,160 @@ mix run --no-halt
 ```
 
 The HTTP server listens on `http://127.0.0.1:4000` by default.
-If `127.0.0.1:18789` is already occupied on your machine, set a different
-`OPENCLAW_GATEWAY_PORT` in `.env` and update `OPENCLAW_GATEWAY_URL` to match.
+
+If you do not set `ENGINE_CONFIG_ROOT`, the service loads the sample business
+config bundled in [priv/engine/default](/home/chareice/projects/openclaw-zalify/main/priv/engine/default).
 
 ## Environment
 
 ```bash
 HTTP_PORT=4000
+ENGINE_CONFIG_ROOT=/abs/path/to/your/business-engine-config
+
 OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
 OPENCLAW_GATEWAY_TOKEN=change-me
 OPENCLAW_PROBE_TIMEOUT_MS=1500
 OPENCLAW_ADMIN_TIMEOUT_MS=5000
 OPENCLAW_CHAT_TIMEOUT_MS=60000
-OPENCLAW_WORKSPACE_ROOT=/home/node/.openclaw/workspace/zalify
+OPENCLAW_WORKSPACE_ROOT=/home/node/.openclaw/workspace/spaces
+
 OPENCLAW_GATEWAY_BIND=lan
+OPENCLAW_GATEWAY_PORT=18789
 OPENCLAW_GATEWAY_INTERNAL_PORT=18789
+
 POSTGRES_PORT=5433
 DATABASE_URL=ecto://postgres:postgres@127.0.0.1:5433/openclaw_zalify_dev
 ```
 
-`OPENCLAW_GATEWAY_PORT` is the host port exposed by Docker Compose.
-`OPENCLAW_GATEWAY_INTERNAL_PORT` stays at `18789` unless you have a specific
-reason to change the container's listening port as well.
+`ENGINE_CONFIG_ROOT` is the main product interface for a self-hosted business.
+The engine reads that directory on startup and can reload it through
+`POST /api/instance/reload`.
 
-## Endpoints
+## Config directory
 
-- `GET /health` returns service health
-- `GET /ready` returns OpenClaw readiness based on token presence and gateway reachability
-- `POST /api/workspaces/:workspace_id/ai-agent/provision` creates or reuses a workspace agent
-- `GET /api/workspaces/:workspace_id/ai-agent` returns the stored workspace-agent mapping
-- `GET /api/workspaces/:workspace_id/ai-agent/files` lists supported workspace files from OpenClaw
-- `GET /api/workspaces/:workspace_id/ai-agent/files/:name` reads one supported workspace file
-- `DELETE /api/workspaces/:workspace_id/ai-agent` deletes the OpenClaw agent and local mapping
-- `GET /ws/chat` upgrades to a WebSocket session for chat control
+The engine expects a directory shaped like this:
 
-## Docker Compose
-
-The repository includes a local PostgreSQL database and OpenClaw Gateway harness:
-
-```bash
-docker compose up -d postgres openclaw-gateway
-docker compose logs -f postgres
-docker compose logs -f openclaw-gateway
-docker compose down
+```text
+engine/
+  instance.yaml
+  models/
+    default.yaml
+    premium.yaml
+  spaces/
+    shop-123.yaml
+    shop-456.yaml
+  templates/
+    merchant-support/
+      IDENTITY.md
+      SOUL.md
+      USER.md
 ```
 
-The compose file uses the official image `ghcr.io/openclaw/openclaw:latest` and
-binds the gateway to `127.0.0.1:18789`.
-For local bootstrap, the tracked OpenClaw config disables the Control UI so the
-container can run without extra browser-origin configuration. On first startup,
-Docker Compose copies that tracked config template into the writable `.docker`
-state directory so `agents.create` can update it normally.
+The bundled sample config lives under
+[priv/engine/default](/home/chareice/projects/openclaw-zalify/main/priv/engine/default).
 
-## Provision flow
+### `instance.yaml`
 
-`POST /api/workspaces/:workspace_id/ai-agent/provision` does the following:
+```yaml
+id: acme
+name: ACME Commerce
 
-1. checks whether the workspace already has a mapping in PostgreSQL
-2. creates an OpenClaw agent through `agents.create` when missing
-3. writes `IDENTITY.md`, `SOUL.md`, and `USER.md` through `agents.files.set`
-4. persists the workspace mapping and agent profile locally
+agent:
+  name_template: "{{instance.id}}-{{space.slug}}"
+  workspace_path_template: "{{openclaw.workspace_root}}/{{instance.id}}/{{space.slug}}"
 
-`GET /api/workspaces/:workspace_id/ai-agent/files` and
-`GET /api/workspaces/:workspace_id/ai-agent/files/:name` proxy OpenClaw's
-`agents.files.list` and `agents.files.get` for the mapped agent.
+defaults:
+  template_set: merchant-support
+  model_profile: default
+  tool_profile: default
+  memory_enabled: true
+```
 
-`DELETE /api/workspaces/:workspace_id/ai-agent` deletes the mapped OpenClaw
-agent through `agents.delete` and removes the local PostgreSQL mapping.
+### `models/default.yaml`
+
+```yaml
+id: default
+label: Default
+model_ref: deepseek/deepseek-chat
+reasoning_level: off
+timeout_ms: 45000
+```
+
+The current engine applies these model settings per session through
+`sessions.patch` before `chat.send`.
+
+### `spaces/shop-123.yaml`
+
+```yaml
+id: shop-123
+name: Shop 123
+
+agent:
+  display_name: Shop 123 Assistant
+  model_profile: default
+  template_set: merchant-support
+  memory_enabled: true
+
+variables:
+  region: sg
+  storefront: shop-123.example.com
+```
+
+### `templates/merchant-support/IDENTITY.md`
+
+```md
+# Identity
+
+- Business: {{instance.name}}
+- Space ID: {{space.id}}
+- Space Name: {{space.name}}
+- Display Name: {{space.display_name}}
+- Storefront: {{vars.storefront}}
+```
+
+The template renderer resolves `{{instance.*}}`, `{{space.*}}`, `{{model.*}}`,
+`{{vars.*}}`, and `{{openclaw.workspace_root}}`.
+
+## HTTP API
+
+### Instance APIs
+
+- `GET /api/instance`
+- `POST /api/instance/reload`
+
+`GET /api/instance` returns the loaded business instance metadata and current
+space count.
+
+### Space APIs
+
+- `GET /api/spaces`
+- `GET /api/spaces/:space_id`
+- `GET /api/spaces/:space_id/agent`
+- `POST /api/spaces/:space_id/agent/provision`
+- `GET /api/spaces/:space_id/agent/files`
+- `GET /api/spaces/:space_id/agent/files/:name`
+- `DELETE /api/spaces/:space_id/agent`
+
+Compatibility aliases are still available:
+
+- `GET /api/workspaces/:workspace_id/ai-agent`
+- `POST /api/workspaces/:workspace_id/ai-agent/provision`
+- `GET /api/workspaces/:workspace_id/ai-agent/files`
+- `GET /api/workspaces/:workspace_id/ai-agent/files/:name`
+- `DELETE /api/workspaces/:workspace_id/ai-agent`
+
+Example provision call:
+
+```bash
+curl -s -X POST http://127.0.0.1:4000/api/spaces/demo-shop/agent/provision \
+  -H 'content-type: application/json' \
+  -d '{"display_name":"Demo Shop Assistant"}'
+```
 
 ## WebSocket chat
 
-`GET /ws/chat` is the chat message plane. Clients connect to Zalify's Elixir
-layer, not directly to OpenClaw.
+`GET /ws/chat` is the message plane. Clients connect to the Elixir layer, which
+then bridges to OpenClaw over WebSocket.
 
 Supported client frames:
 
@@ -142,7 +229,7 @@ Request:
 {
   "type": "send_message",
   "request_id": "req-1",
-  "workspace_id": "shop-1",
+  "space_id": "shop-123",
   "message": "Please reply with a confirmation token."
 }
 ```
@@ -155,8 +242,8 @@ Response sequence:
   "request_id": "req-1",
   "session": {
     "id": "8f0cc0d5-58df-479a-b4c2-49e9b3724383",
-    "workspace_id": "shop-1",
-    "agent_id": "zalify-shop-1",
+    "space_id": "shop-123",
+    "agent_id": "acme-shop-123",
     "status": "active"
   }
 }
@@ -167,7 +254,7 @@ Response sequence:
   "type": "run_started",
   "request_id": "req-1",
   "session_id": "8f0cc0d5-58df-479a-b4c2-49e9b3724383",
-  "session_key": "agent:zalify-shop-1:web:direct:8f0cc0d5-58df-479a-b4c2-49e9b3724383",
+  "session_key": "agent:acme-shop-123:web:direct:8f0cc0d5-58df-479a-b4c2-49e9b3724383",
   "run_id": "9db6e3f7-e9fb-4313-b54b-0df34ea3d36a",
   "status": "started"
 }
@@ -194,17 +281,14 @@ Response sequence:
 
 Notes:
 
-- When `session_id` is omitted, Zalify creates a new `chat_sessions` record and
-  derives an OpenClaw session key under the mapped agent.
-- When `session_id` is present, `workspace_id` becomes optional and the existing
-  chat session is reused.
-- `chat_event.state` can be `delta`, `final`, `error`, or `aborted`.
-- `OPENCLAW_CHAT_TIMEOUT_MS` controls how long Zalify will wait for OpenClaw to
-  produce stream events before failing the run.
+- when `session_id` is omitted, the engine creates a new chat session and
+  derives an OpenClaw session key under the mapped space agent
+- when `session_id` is present, `space_id` becomes optional
+- `workspace_id` is accepted as a legacy alias for `space_id`
+- `chat_event.state` can be `delta`, `final`, `error`, or `aborted`
+- `OPENCLAW_CHAT_TIMEOUT_MS` is used when a space or caller does not override it
 
 ### `get_history`
-
-Request:
 
 ```json
 {
@@ -215,29 +299,7 @@ Request:
 }
 ```
 
-Response:
-
-```json
-{
-  "type": "history",
-  "request_id": "req-history",
-  "session": {
-    "id": "8f0cc0d5-58df-479a-b4c2-49e9b3724383",
-    "workspace_id": "shop-1",
-    "agent_id": "zalify-shop-1",
-    "status": "active"
-  },
-  "messages": [
-    {
-      "role": "assistant"
-    }
-  ]
-}
-```
-
 ### `abort_run`
-
-Request:
 
 ```json
 {
@@ -248,36 +310,18 @@ Request:
 }
 ```
 
-Response:
+## Runtime state
 
-```json
-{
-  "type": "run_aborted",
-  "request_id": "req-abort",
-  "session": {
-    "id": "8f0cc0d5-58df-479a-b4c2-49e9b3724383",
-    "workspace_id": "shop-1",
-    "agent_id": "zalify-shop-1",
-    "status": "active"
-  },
-  "aborted": true,
-  "run_ids": [
-    "9db6e3f7-e9fb-4313-b54b-0df34ea3d36a"
-  ]
-}
-```
+The config directory is the desired state.
+The runtime state still lives in PostgreSQL and OpenClaw workspace volumes:
 
-Validation and OpenClaw bridge failures are returned as:
+- configured spaces and model profiles come from disk
+- provisioned agent bindings are stored in PostgreSQL
+- chat sessions are stored in PostgreSQL
+- OpenClaw transcripts and workspace files live under `OPENCLAW_WORKSPACE_ROOT`
 
-```json
-{
-  "type": "error",
-  "request_id": "req-1",
-  "error": "validation_error",
-  "details": {
-    "type": [
-      "is not supported"
-    ]
-  }
-}
-```
+That split is intentional:
+
+- config directory for static business rules
+- database for mutable runtime state
+- environment variables for secrets

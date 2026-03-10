@@ -11,7 +11,7 @@ defmodule OpenClawZalify.Config do
   @default_chat_timeout_ms 60_000
   @default_probe_timeout_ms 1_500
   @default_gateway_url "ws://127.0.0.1:18789"
-  @default_workspace_root "/home/node/.openclaw/workspace/zalify"
+  @default_workspace_root "/home/node/.openclaw/workspace/spaces"
 
   @spec http_port() :: pos_integer()
   def http_port do
@@ -72,6 +72,16 @@ defmodule OpenClawZalify.Config do
   def openclaw_workspace_root do
     load_dotenv()
     System.get_env("OPENCLAW_WORKSPACE_ROOT", @default_workspace_root)
+  end
+
+  @spec engine_config_root() :: String.t()
+  def engine_config_root do
+    load_dotenv()
+
+    System.get_env(
+      "ENGINE_CONFIG_ROOT",
+      Path.join(List.to_string(:code.priv_dir(:openclaw_zalify)), "engine/default")
+    )
   end
 
   @spec present?(String.t() | nil) :: boolean()

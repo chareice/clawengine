@@ -1,0 +1,12 @@
+id: demo-shop
+name: Demo Shop
+
+agent:
+  display_name: Demo Shop Assistant
+  model_profile: default
+  template_set: merchant-support
+  memory_enabled: true
+
+variables:
+  region: singapore
+  storefront: demo.example.com
