@@ -11,10 +11,15 @@ end
 config :openclaw_zalify,
   http_port: String.to_integer(System.get_env("HTTP_PORT", "4000"))
 
-database_url =
-  System.get_env("DATABASE_URL") ||
-    "ecto://postgres:postgres@127.0.0.1:5433/openclaw_zalify_dev"
+database_path =
+  System.get_env("DATABASE_PATH") ||
+    Path.expand("../.data/openclaw_zalify_dev.sqlite3", __DIR__)
+
+File.mkdir_p!(Path.dirname(database_path))
 
 config :openclaw_zalify, OpenClawZalify.Repo,
-  url: database_url,
-  pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE", "10"))
+  database: database_path,
+  pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE", "1")),
+  busy_timeout: String.to_integer(System.get_env("DATABASE_BUSY_TIMEOUT_MS", "5000")),
+  journal_mode: :wal,
+  temp_store: :memory

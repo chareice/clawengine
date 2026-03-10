@@ -22,4 +22,6 @@ openclaw_zalify-*.tar
 # Temporary files, for example, from tests.
 /tmp/
 .env
+.data/
+.docker/postgres/
 .docker/openclaw/

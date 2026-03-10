@@ -9,7 +9,7 @@ notes:
 - the instance serves many internal tenants as `spaces`
 - each space can resolve to one OpenClaw agent
 - model profiles, prompts, and defaults come from a config directory
-- sessions, runs, and agent bindings stay in PostgreSQL
+- sessions, runs, and agent bindings stay in SQLite by default
 
 Zalify is one example of a business that can run this engine, but the runtime is
 now driven by a generic `instance -> spaces -> agents -> sessions` model instead
@@ -22,7 +22,7 @@ of hard-coded Zalify workspace rules.
 - provision one OpenClaw agent per configured space
 - proxy `agents.files.*` through the control plane
 - expose chat over `GET /ws/chat`
-- persist agent bindings and chat sessions in PostgreSQL
+- persist agent bindings and chat sessions in SQLite
 - support business-configured model profiles for each space
 
 ## Stack
@@ -30,7 +30,7 @@ of hard-coded Zalify workspace rules.
 - Elixir `1.18.4`
 - Erlang/OTP `27.3.4`
 - Bandit + Plug for the HTTP surface
-- Ecto + PostgreSQL for runtime state
+- Ecto + SQLite for runtime state
 - `yaml_elixir` for config-directory loading
 - Docker Compose for the local OpenClaw Gateway
 
@@ -40,8 +40,7 @@ of hard-coded Zalify workspace rules.
 mise install
 mix deps.get
 cp .env.example .env
-docker compose up -d postgres openclaw-gateway
-mix ecto.create
+docker compose up -d openclaw-gateway
 mix ecto.migrate
 mix openclaw.probe
 mix test
@@ -70,8 +69,9 @@ OPENCLAW_GATEWAY_BIND=lan
 OPENCLAW_GATEWAY_PORT=18789
 OPENCLAW_GATEWAY_INTERNAL_PORT=18789
 
-POSTGRES_PORT=5433
-DATABASE_URL=ecto://postgres:postgres@127.0.0.1:5433/openclaw_zalify_dev
+DATABASE_PATH=.data/openclaw_zalify_dev.sqlite3
+DATABASE_POOL_SIZE=1
+DATABASE_BUSY_TIMEOUT_MS=5000
 ```
 
 `ENGINE_CONFIG_ROOT` is the main product interface for a self-hosted business.
@@ -313,11 +313,11 @@ Notes:
 ## Runtime state
 
 The config directory is the desired state.
-The runtime state still lives in PostgreSQL and OpenClaw workspace volumes:
+The runtime state still lives in SQLite and OpenClaw workspace volumes:
 
 - configured spaces and model profiles come from disk
-- provisioned agent bindings are stored in PostgreSQL
-- chat sessions are stored in PostgreSQL
+- provisioned agent bindings are stored in SQLite
+- chat sessions are stored in SQLite
 - OpenClaw transcripts and workspace files live under `OPENCLAW_WORKSPACE_ROOT`
 
 That split is intentional:

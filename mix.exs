@@ -26,9 +26,9 @@ defmodule OpenClawZalify.MixProject do
     [
       {:bandit, "~> 1.5"},
       {:ecto_sql, "~> 3.12"},
+      {:ecto_sqlite3, "~> 0.18"},
       {:jason, "~> 1.4"},
       {:plug, "~> 1.16"},
-      {:postgrex, "~> 0.19"},
       {:websock_adapter, "~> 0.5"},
       {:websockex, "~> 0.4.3"},
       {:yaml_elixir, "~> 2.11"}
