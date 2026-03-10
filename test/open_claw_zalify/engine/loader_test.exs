@@ -5,7 +5,7 @@ defmodule OpenClawZalify.Engine.LoaderTest do
 
   test "loads a config directory and resolves spaces from templates and model profiles" do
     root =
-      Path.join(System.tmp_dir!(), "openclaw-zalify-loader-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "clawengine-loader-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(Path.join(root, "models"))
     File.mkdir_p!(Path.join(root, "spaces"))

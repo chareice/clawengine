@@ -1,6 +1,6 @@
-defmodule OpenClawZalify.Agents.PostgresStore do
+defmodule OpenClawZalify.Agents.RepoStore do
   @moduledoc """
-  PostgreSQL-backed workspace-agent persistence.
+  Repo-backed workspace-agent persistence.
   """
 
   @behaviour OpenClawZalify.Agents.Store

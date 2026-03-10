@@ -100,11 +100,11 @@ defmodule OpenClawZalify.OpenClaw.ChatClient do
         "maxProtocol" => @protocol_version,
         "client" => %{
           "id" => "gateway-client",
-          "displayName" => "openclaw-zalify-chat",
+          "displayName" => "clawengine-chat",
           "version" => state.version,
           "platform" => "elixir",
           "mode" => "backend",
-          "instanceId" => "openclaw-zalify-chat"
+          "instanceId" => "clawengine-chat"
         },
         "caps" => [],
         "role" => "operator",

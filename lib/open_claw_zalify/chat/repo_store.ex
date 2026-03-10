@@ -1,6 +1,6 @@
-defmodule OpenClawZalify.Chat.PostgresStore do
+defmodule OpenClawZalify.Chat.RepoStore do
   @moduledoc """
-  PostgreSQL-backed chat session persistence.
+  Repo-backed chat session persistence.
   """
 
   @behaviour OpenClawZalify.Chat.Store

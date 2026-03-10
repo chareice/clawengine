@@ -1,6 +1,6 @@
-# OpenClaw Self-Hosted Space Engine
+# ClawEngine
 
-Elixir control plane for one business-owned OpenClaw instance.
+Self-hosted Elixir control plane for one business-owned OpenClaw instance.
 
 This engine is designed for the deployment model discussed in the architecture
 notes:
@@ -11,9 +11,9 @@ notes:
 - model profiles, prompts, and defaults come from a config directory
 - sessions, runs, and agent bindings stay in SQLite by default
 
-Zalify is one example of a business that can run this engine, but the runtime is
-now driven by a generic `instance -> spaces -> agents -> sessions` model instead
-of hard-coded Zalify workspace rules.
+A business like Zalify can run this engine, but the runtime is now driven by a
+generic `instance -> spaces -> agents -> sessions` model instead of hard-coded
+workspace rules.
 
 ## Current scope
 
@@ -50,7 +50,7 @@ mix run --no-halt
 The HTTP server listens on `http://127.0.0.1:4000` by default.
 
 If you do not set `ENGINE_CONFIG_ROOT`, the service loads the sample business
-config bundled in [priv/engine/default](/home/chareice/projects/openclaw-zalify/main/priv/engine/default).
+config bundled in [`priv/engine/default`](priv/engine/default).
 
 ## Environment
 
@@ -69,7 +69,7 @@ OPENCLAW_GATEWAY_BIND=lan
 OPENCLAW_GATEWAY_PORT=18789
 OPENCLAW_GATEWAY_INTERNAL_PORT=18789
 
-DATABASE_PATH=.data/openclaw_zalify_dev.sqlite3
+DATABASE_PATH=.data/clawengine_dev.sqlite3
 DATABASE_POOL_SIZE=1
 DATABASE_BUSY_TIMEOUT_MS=5000
 ```
@@ -99,7 +99,7 @@ engine/
 ```
 
 The bundled sample config lives under
-[priv/engine/default](/home/chareice/projects/openclaw-zalify/main/priv/engine/default).
+[`priv/engine/default`](priv/engine/default).
 
 ### `instance.yaml`
 

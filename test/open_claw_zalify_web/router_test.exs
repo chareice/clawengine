@@ -65,7 +65,7 @@ defmodule OpenClawZalifyWeb.RouterTest do
     body = Jason.decode!(conn.resp_body)
 
     assert body["status"] == "ok"
-    assert body["service"] == "openclaw-zalify"
+    assert body["service"] == "clawengine"
   end
 
   test "GET /ready returns not ready when the gateway token is missing" do

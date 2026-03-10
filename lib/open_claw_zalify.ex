@@ -1,6 +1,6 @@
 defmodule OpenClawZalify do
   @moduledoc """
-  Zalify control plane bootstrap for OpenClaw integration.
+  ClawEngine bootstrap for OpenClaw integration.
   """
 
   @version Mix.Project.config()[:version]

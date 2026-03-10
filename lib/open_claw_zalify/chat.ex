@@ -219,7 +219,7 @@ defmodule OpenClawZalify.Chat do
   end
 
   defp session_store do
-    Application.get_env(:openclaw_zalify, :chat_store, OpenClawZalify.Chat.PostgresStore)
+    Application.get_env(:openclaw_zalify, :chat_store, OpenClawZalify.Chat.RepoStore)
   end
 
   defp chat_gateway do

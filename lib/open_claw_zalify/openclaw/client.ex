@@ -79,11 +79,11 @@ defmodule OpenClawZalify.OpenClaw.Client do
         "maxProtocol" => @protocol_version,
         "client" => %{
           "id" => "gateway-client",
-          "displayName" => "openclaw-zalify",
+          "displayName" => "clawengine",
           "version" => state.version,
           "platform" => "elixir",
           "mode" => "backend",
-          "instanceId" => "openclaw-zalify"
+          "instanceId" => "clawengine"
         },
         "caps" => [],
         "role" => "operator",

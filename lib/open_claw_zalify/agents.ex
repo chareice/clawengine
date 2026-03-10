@@ -231,7 +231,7 @@ defmodule OpenClawZalify.Agents do
   end
 
   defp store do
-    Application.get_env(:openclaw_zalify, :agents_store, OpenClawZalify.Agents.PostgresStore)
+    Application.get_env(:openclaw_zalify, :agents_store, OpenClawZalify.Agents.RepoStore)
   end
 
   defp admin_client do

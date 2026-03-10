@@ -21,7 +21,7 @@ defmodule OpenClawZalifyWeb.Router do
       200,
       Jason.encode!(%{
         status: "ok",
-        service: "openclaw-zalify",
+        service: "clawengine",
         version: OpenClawZalify.version()
       })
     )

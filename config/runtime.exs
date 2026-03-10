@@ -13,7 +13,7 @@ config :openclaw_zalify,
 
 database_path =
   System.get_env("DATABASE_PATH") ||
-    Path.expand("../.data/openclaw_zalify_dev.sqlite3", __DIR__)
+    Path.expand("../.data/clawengine_dev.sqlite3", __DIR__)
 
 File.mkdir_p!(Path.dirname(database_path))
 

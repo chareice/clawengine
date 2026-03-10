@@ -57,7 +57,7 @@ defmodule OpenClawZalify.EnvFileTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "openclaw-zalify-env-#{System.unique_integer([:positive])}.env"
+        "clawengine-env-#{System.unique_integer([:positive])}.env"
       )
 
     File.write!(path, contents)
