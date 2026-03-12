@@ -41,7 +41,7 @@ mise install
 mix deps.get
 cp .env.example .env
 docker compose up -d openclaw-gateway
-mix ecto.migrate
+mix openclaw.migrate
 mix openclaw.probe
 mix test
 mix run --no-halt
@@ -77,6 +77,50 @@ DATABASE_BUSY_TIMEOUT_MS=5000
 `ENGINE_CONFIG_ROOT` is the main product interface for a self-hosted business.
 The engine reads that directory on startup and can reload it through
 `POST /api/instance/reload`.
+
+## Embedded mode
+
+ClawEngine can also run inside a host Elixir application instead of being
+deployed as a separate HTTP service.
+
+Recommended dependency setup in the host app:
+
+```elixir
+{:openclaw_zalify, path: "/abs/path/to/openclaw-zalify", runtime: false}
+```
+
+Recommended host config:
+
+```elixir
+config :openclaw_zalify,
+  repo: HostApp.Repo,
+  load_env_file: false,
+  start_http_server: false,
+  start_repo: false,
+  start_engine_registry: true
+```
+
+Recommended host supervision tree:
+
+```elixir
+children = [
+  {OpenClawZalify,
+   repo: HostApp.Repo,
+   start_http_server: false,
+   start_repo: false,
+   start_engine_registry: true}
+]
+```
+
+In embedded mode, the host app should:
+
+- manage the engine config via `config :openclaw_zalify, ...`
+- run `mix openclaw.migrate` against the configured repo
+- call the engine services directly through `OpenClawZalify.Spaces`,
+  `OpenClawZalify.Agents`, and `OpenClawZalify.Chat`
+
+This keeps one BEAM process while still reusing the full ClawEngine control
+plane internally.
 
 ## Config directory
 

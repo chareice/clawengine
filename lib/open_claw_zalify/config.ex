@@ -105,7 +105,7 @@ defmodule OpenClawZalify.Config do
   end
 
   defp load_dotenv do
-    if Mix.env() != :test do
+    if Application.get_env(:openclaw_zalify, :load_env_file, true) do
       EnvFile.load_system(EnvFile.default_path())
     end
   end

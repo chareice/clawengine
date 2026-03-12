@@ -8,8 +8,6 @@ defmodule OpenClawZalify.Agents.RepoStore do
   alias OpenClawZalify.Agents.AgentProfile
   alias OpenClawZalify.Agents.AgentRecord
   alias OpenClawZalify.Agents.WorkspaceAgentMapping
-  alias OpenClawZalify.Repo
-
   import Ecto.Query
 
   @impl true
@@ -21,16 +19,16 @@ defmodule OpenClawZalify.Agents.RepoStore do
         preload: [profile: profile]
       )
 
-    {:ok, Repo.one(query) |> to_record()}
+    {:ok, repo().one(query) |> to_record()}
   rescue
     err -> {:error, err}
   end
 
   @impl true
   def upsert_workspace_agent(attrs) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       mapping =
-        Repo.get(WorkspaceAgentMapping, attrs.workspace_id) ||
+        repo().get(WorkspaceAgentMapping, attrs.workspace_id) ||
           %WorkspaceAgentMapping{workspace_id: attrs.workspace_id}
 
       mapping =
@@ -42,10 +40,10 @@ defmodule OpenClawZalify.Agents.RepoStore do
           runtime_mode: attrs.runtime_mode,
           workspace_path: attrs.workspace_path
         })
-        |> Repo.insert_or_update!()
+        |> repo().insert_or_update!()
 
       profile =
-        Repo.get(AgentProfile, attrs.workspace_id) ||
+        repo().get(AgentProfile, attrs.workspace_id) ||
           %AgentProfile{workspace_id: attrs.workspace_id}
 
       profile =
@@ -60,7 +58,7 @@ defmodule OpenClawZalify.Agents.RepoStore do
           model_ref: attrs.model_ref,
           memory_enabled: attrs.memory_enabled
         })
-        |> Repo.insert_or_update!()
+        |> repo().insert_or_update!()
 
       mapping
       |> Map.put(:profile, profile)
@@ -76,15 +74,15 @@ defmodule OpenClawZalify.Agents.RepoStore do
 
   @impl true
   def delete_workspace_agent(workspace_id) do
-    Repo.transaction(fn ->
-      case Repo.get(WorkspaceAgentMapping, workspace_id) do
+    repo().transaction(fn ->
+      case repo().get(WorkspaceAgentMapping, workspace_id) do
         nil ->
           nil
 
         mapping ->
-          mapping = Repo.preload(mapping, :profile)
+          mapping = repo().preload(mapping, :profile)
           record = to_record(mapping)
-          Repo.delete!(mapping)
+          repo().delete!(mapping)
           record
       end
     end)
@@ -117,5 +115,9 @@ defmodule OpenClawZalify.Agents.RepoStore do
       inserted_at: mapping.inserted_at,
       updated_at: mapping.updated_at
     }
+  end
+
+  defp repo do
+    OpenClawZalify.repo()
   end
 end
