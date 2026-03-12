@@ -67,6 +67,7 @@ defmodule OpenClawZalify.AgentsTest do
             create_calls: [],
             delete_calls: [],
             file_calls: [],
+            fail_next_set_count: 0,
             workspaces: %{},
             files: %{}
           }
@@ -77,13 +78,26 @@ defmodule OpenClawZalify.AgentsTest do
 
     def reset! do
       Agent.update(__MODULE__, fn _state ->
-        %{create_calls: [], delete_calls: [], file_calls: [], workspaces: %{}, files: %{}}
+        %{
+          create_calls: [],
+          delete_calls: [],
+          file_calls: [],
+          fail_next_set_count: 0,
+          workspaces: %{},
+          files: %{}
+        }
       end)
     end
 
     def create_calls, do: Agent.get(__MODULE__, & &1.create_calls)
     def delete_calls, do: Agent.get(__MODULE__, & &1.delete_calls)
     def file_calls, do: Agent.get(__MODULE__, & &1.file_calls)
+
+    def fail_next_set! do
+      Agent.update(__MODULE__, fn state ->
+        %{state | fail_next_set_count: state.fail_next_set_count + 1}
+      end)
+    end
 
     def create_agent(%{name: name, workspace: workspace}) do
       Agent.update(__MODULE__, fn state ->
@@ -112,18 +126,28 @@ defmodule OpenClawZalify.AgentsTest do
     end
 
     def set_agent_file(agent_id, name, content) do
-      Agent.update(__MODULE__, fn state ->
-        %{
+      Agent.get_and_update(__MODULE__, fn state ->
+        next_state = %{
           state
-          | file_calls: [%{agent_id: agent_id, name: name, content: content} | state.file_calls],
-            files:
-              Map.update(state.files, agent_id, %{name => content}, fn files ->
-                Map.put(files, name, content)
-              end)
+          | file_calls: [%{agent_id: agent_id, name: name, content: content} | state.file_calls]
         }
-      end)
 
-      {:ok, %{ok: true}}
+        if state.fail_next_set_count > 0 do
+          {{:error,
+            {:request_failed, %{"code" => "INVALID_REQUEST", "message" => "unknown agent id"}}},
+           %{next_state | fail_next_set_count: state.fail_next_set_count - 1}}
+        else
+          updated_state = %{
+            next_state
+            | files:
+                Map.update(next_state.files, agent_id, %{name => content}, fn files ->
+                  Map.put(files, name, content)
+                end)
+          }
+
+          {{:ok, %{ok: true}}, updated_state}
+        end
+      end)
     end
 
     def list_agent_files(agent_id) do
@@ -185,13 +209,16 @@ defmodule OpenClawZalify.AgentsTest do
 
     original_store = Application.get_env(:openclaw_zalify, :agents_store)
     original_client = Application.get_env(:openclaw_zalify, :openclaw_admin_client)
+    original_retry_delays = Application.get_env(:openclaw_zalify, :agents_file_sync_retry_delays_ms)
 
     Application.put_env(:openclaw_zalify, :agents_store, MemoryStore)
     Application.put_env(:openclaw_zalify, :openclaw_admin_client, FakeAdminClient)
+    Application.put_env(:openclaw_zalify, :agents_file_sync_retry_delays_ms, [0])
 
     on_exit(fn ->
       Application.put_env(:openclaw_zalify, :agents_store, original_store)
       Application.put_env(:openclaw_zalify, :openclaw_admin_client, original_client)
+      Application.put_env(:openclaw_zalify, :agents_file_sync_retry_delays_ms, original_retry_delays)
     end)
 
     :ok
@@ -222,6 +249,21 @@ defmodule OpenClawZalify.AgentsTest do
 
   test "normalizes the workspace id into a stable agent name" do
     assert Agents.agent_name_for_workspace(" Demo / CN #1 ") == "space-demo-cn-1"
+  end
+
+  test "retries agent file sync when the gateway briefly returns unknown agent id" do
+    FakeAdminClient.fail_next_set!()
+
+    assert {:ok, %{created?: true, agent: agent}} =
+             Agents.provision_workspace_agent("shop-retry", %{
+               display_name: "Retry Agent"
+             })
+
+    assert agent.agent_id == "space-shop-retry"
+
+    file_calls = FakeAdminClient.file_calls()
+    assert length(file_calls) == 4
+    assert Enum.count(file_calls, &(&1.name == "IDENTITY.md")) == 2
   end
 
   test "deletes an existing workspace agent and removes the local mapping" do

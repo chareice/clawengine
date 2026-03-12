@@ -6,6 +6,8 @@ defmodule OpenClawZalify.Agents do
   alias OpenClawZalify.Agents.AgentRecord
   alias OpenClawZalify.Config
 
+  @default_file_sync_retry_delays_ms [250, 500, 1_000]
+
   @type provision_attrs :: %{
           optional(:agent_name) => String.t(),
           optional(:workspace_path) => String.t(),
@@ -155,11 +157,32 @@ defmodule OpenClawZalify.Agents do
     ]
 
     Enum.reduce_while(files, :ok, fn {name, content}, :ok ->
-      case admin_client().set_agent_file(agent_id, name, content) do
+      case set_agent_file_with_retry(agent_id, name, content, file_sync_retry_delays_ms()) do
         {:ok, _result} -> {:cont, :ok}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp set_agent_file_with_retry(agent_id, name, content, retry_delays_ms) do
+    case admin_client().set_agent_file(agent_id, name, content) do
+      {:ok, _result} = ok ->
+        ok
+
+      {:error, reason} = error ->
+        case retry_delays_ms do
+          [delay_ms | rest] ->
+            if retryable_file_sync_error?(reason) do
+              if delay_ms > 0, do: Process.sleep(delay_ms)
+              set_agent_file_with_retry(agent_id, name, content, rest)
+            else
+              error
+            end
+
+          _other ->
+            error
+        end
+    end
   end
 
   defp validate_workspace_id(""), do: {:error, {:validation, %{workspace_id: ["can't be blank"]}}}
@@ -228,6 +251,23 @@ defmodule OpenClawZalify.Agents do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp retryable_file_sync_error?(
+         {:request_failed, %{"code" => "INVALID_REQUEST", "message" => message}}
+       )
+       when is_binary(message) do
+    String.contains?(String.downcase(message), "unknown agent id")
+  end
+
+  defp retryable_file_sync_error?(_reason), do: false
+
+  defp file_sync_retry_delays_ms do
+    Application.get_env(
+      :openclaw_zalify,
+      :agents_file_sync_retry_delays_ms,
+      @default_file_sync_retry_delays_ms
+    )
   end
 
   defp store do
