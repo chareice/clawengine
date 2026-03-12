@@ -7,11 +7,9 @@ defmodule OpenClawZalify.Chat.RepoStore do
 
   alias OpenClawZalify.Chat.Session
   alias OpenClawZalify.Chat.SessionRecord
-  alias OpenClawZalify.Repo
-
   @impl true
   def get_session(session_id) do
-    {:ok, Repo.get(Session, session_id) |> to_record()}
+    {:ok, repo().get(Session, session_id) |> to_record()}
   rescue
     err -> {:error, err}
   end
@@ -26,7 +24,7 @@ defmodule OpenClawZalify.Chat.RepoStore do
       openclaw_session_key: attrs.openclaw_session_key,
       status: attrs.status
     })
-    |> Repo.insert()
+    |> repo().insert()
     |> case do
       {:ok, session} -> {:ok, to_record(session)}
       {:error, reason} -> {:error, reason}
@@ -47,5 +45,9 @@ defmodule OpenClawZalify.Chat.RepoStore do
       inserted_at: session.inserted_at,
       updated_at: session.updated_at
     }
+  end
+
+  defp repo do
+    OpenClawZalify.repo()
   end
 end
