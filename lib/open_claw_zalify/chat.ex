@@ -9,11 +9,19 @@ defmodule OpenClawZalify.Chat do
   alias OpenClawZalify.Engine.Space
   alias OpenClawZalify.Spaces
 
+  @type image_attachment :: %{
+          required(:type) => String.t(),
+          required(:mime_type) => String.t(),
+          required(:content) => String.t(),
+          optional(:file_name) => String.t() | nil
+        }
+
   @type send_opts :: [
           {:stream_ref, term()},
           {:stream_to, pid()},
           {:idempotency_key, String.t()},
-          {:timeout_ms, pos_integer()}
+          {:timeout_ms, pos_integer()},
+          {:attachments, [image_attachment()]}
         ]
 
   @spec send_message(String.t() | nil, String.t() | nil, String.t(), send_opts()) ::
@@ -26,8 +34,10 @@ defmodule OpenClawZalify.Chat do
     space_id = normalize_optional_text(space_id)
     session_id = normalize_optional_text(session_id)
     message = String.trim(message)
+    attachments = Keyword.get(opts, :attachments, [])
 
-    with :ok <- validate_message(message),
+    with {:ok, normalized_attachments} <- normalize_attachments(attachments),
+         :ok <- validate_message(message, normalized_attachments),
          {:ok, {session, agent, space}} <- resolve_session_and_agent(space_id, session_id),
          :ok <- maybe_patch_session_runtime(session, agent, space),
          {:ok, _pid} <-
@@ -37,6 +47,7 @@ defmodule OpenClawZalify.Chat do
              session_id: session.id,
              session_key: session.openclaw_session_key,
              message: message,
+             attachments: normalized_attachments,
              idempotency_key: Keyword.get(opts, :idempotency_key, Ecto.UUID.generate()),
              timeout_ms:
                Keyword.get(
@@ -161,9 +172,44 @@ defmodule OpenClawZalify.Chat do
         :ok
 
       _size ->
-        case chat_gateway().patch_session(session.openclaw_session_key, patch) do
-          {:ok, _payload} -> :ok
-          {:error, reason} -> {:error, reason}
+        patch_session_runtime(session.openclaw_session_key, patch)
+    end
+  end
+
+  defp patch_session_runtime(session_key, patch) do
+    case chat_gateway().patch_session(session_key, patch) do
+      {:ok, _payload} ->
+        :ok
+
+      {:error, reason} ->
+        maybe_retry_without_model_ref(session_key, patch, reason)
+    end
+  end
+
+  defp maybe_retry_without_model_ref(session_key, patch, reason) do
+    cond do
+      not model_not_allowed_error?(reason) ->
+        {:error, reason}
+
+      not Map.has_key?(patch, :model_ref) ->
+        {:error, reason}
+
+      true ->
+        retry_patch =
+          patch
+          |> Map.delete(:model_ref)
+          |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+          |> Map.new()
+
+        case map_size(retry_patch) do
+          0 ->
+            :ok
+
+          _size ->
+            case chat_gateway().patch_session(session_key, retry_patch) do
+              {:ok, _payload} -> :ok
+              {:error, retry_reason} -> {:error, retry_reason}
+            end
         end
     end
   end
@@ -192,8 +238,74 @@ defmodule OpenClawZalify.Chat do
   defp validate_session_id(""), do: {:error, {:validation, %{session_id: ["can't be blank"]}}}
   defp validate_session_id(_session_id), do: :ok
 
-  defp validate_message(""), do: {:error, {:validation, %{message: ["can't be blank"]}}}
-  defp validate_message(_message), do: :ok
+  defp validate_message("", []), do: {:error, {:validation, %{message: ["can't be blank"]}}}
+  defp validate_message(_message, _attachments), do: :ok
+
+  defp model_not_allowed_error?({:request_failed, %{"code" => "INVALID_REQUEST", "message" => message}})
+       when is_binary(message) do
+    String.starts_with?(String.downcase(message), "model not allowed:")
+  end
+
+  defp model_not_allowed_error?(_reason), do: false
+
+  defp normalize_attachments([]), do: {:ok, []}
+
+  defp normalize_attachments(attachments) when is_list(attachments) do
+    attachments
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn {attachment, index}, {:ok, acc} ->
+      case normalize_attachment(attachment, index) do
+        {:ok, normalized_attachment} ->
+          {:cont, {:ok, [normalized_attachment | acc]}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, normalized_attachments} -> {:ok, Enum.reverse(normalized_attachments)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp normalize_attachments(_attachments),
+    do: {:error, {:validation, %{attachments: ["must be a list"]}}}
+
+  defp normalize_attachment(attachment, index) when is_map(attachment) do
+    type = attachment[:type] || attachment["type"]
+    mime_type = attachment[:mime_type] || attachment["mime_type"] || attachment[:mimeType]
+    content = attachment[:content] || attachment["content"]
+    file_name = attachment[:file_name] || attachment["file_name"] || attachment[:fileName]
+    field = "attachments[#{index}]"
+
+    cond do
+      type != "image" ->
+        {:error, {:validation, %{attachments: ["#{field} only image attachments are supported"]}}}
+
+      not (is_binary(mime_type) and String.starts_with?(mime_type, "image/")) ->
+        {:error, {:validation, %{attachments: ["#{field} must include an image mime type"]}}}
+
+      not (is_binary(content) and String.trim(content) != "") ->
+        {:error,
+         {:validation, %{attachments: ["#{field} must include base64 or data URL content"]}}}
+
+      not (is_nil(file_name) or is_binary(file_name)) ->
+        {:error, {:validation, %{attachments: ["#{field} file_name must be a string"]}}}
+
+      true ->
+        {:ok,
+         %{
+           type: "image",
+           mime_type: String.trim(mime_type),
+           content: String.trim(content),
+           file_name: normalize_optional_text(file_name)
+         }}
+    end
+  end
+
+  defp normalize_attachment(_attachment, index) do
+    {:error, {:validation, %{attachments: ["attachments[#{index}] must be an object"]}}}
+  end
 
   defp validate_limit(limit) when limit < 1 do
     {:error, {:validation, %{limit: ["must be greater than 0"]}}}

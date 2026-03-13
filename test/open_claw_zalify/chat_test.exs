@@ -129,7 +129,7 @@ defmodule OpenClawZalify.ChatTest do
     def start_link(_opts) do
       Agent.start_link(
         fn ->
-          %{patch_calls: [], history_calls: [], abort_calls: []}
+          %{patch_calls: [], history_calls: [], abort_calls: [], patch_results: []}
         end,
         name: __MODULE__
       )
@@ -137,23 +137,32 @@ defmodule OpenClawZalify.ChatTest do
 
     def reset! do
       Agent.update(__MODULE__, fn _state ->
-        %{patch_calls: [], history_calls: [], abort_calls: []}
+        %{patch_calls: [], history_calls: [], abort_calls: [], patch_results: []}
       end)
     end
 
     def patch_calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.patch_calls))
     def history_calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.history_calls))
     def abort_calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.abort_calls))
+    def set_patch_results(results) when is_list(results), do: Agent.update(__MODULE__, &Map.put(&1, :patch_results, results))
 
     def patch_session(session_key, attrs) do
-      Agent.update(__MODULE__, fn state ->
-        %{
-          state
-          | patch_calls: [%{session_key: session_key, attrs: attrs} | state.patch_calls]
-        }
-      end)
+      Agent.get_and_update(__MODULE__, fn state ->
+        next_result =
+          case state.patch_results do
+            [result | rest] -> {result, rest}
+            [] -> {{:ok, %{"ok" => true}}, []}
+          end
 
-      {:ok, %{"ok" => true}}
+        {result, remaining_results} = next_result
+
+        {result,
+         %{
+           state
+           | patch_calls: [%{session_key: session_key, attrs: attrs} | state.patch_calls],
+             patch_results: remaining_results
+         }}
+      end)
     end
 
     def chat_history(session_key, limit) do
@@ -269,7 +278,49 @@ defmodule OpenClawZalify.ChatTest do
     [call] = FakeChatClient.calls()
     assert call.session_id == session.id
     assert call.message == "Hello world"
+    assert call.attachments == []
     assert call.timeout_ms == 60_000
+  end
+
+  test "send_message accepts image attachments without text" do
+    stream_ref = %{request_id: "req-image"}
+
+    assert {:ok, %{session: session}} =
+             Chat.send_message("shop-images", nil, "",
+               stream_to: self(),
+               stream_ref: stream_ref,
+               attachments: [
+                 %{
+                   type: "image",
+                   mime_type: "image/png",
+                   file_name: "lobster.png",
+                   content: "data:image/png;base64,QUJDRA=="
+                 }
+               ]
+             )
+
+    assert_receive {:openclaw_chat_stream, ^stream_ref, {:run_started, %{session_id: session_id}}}
+    assert session_id == session.id
+
+    [call] = FakeChatClient.calls()
+    assert call.message == ""
+
+    assert call.attachments == [
+             %{
+               type: "image",
+               mime_type: "image/png",
+               file_name: "lobster.png",
+               content: "data:image/png;base64,QUJDRA=="
+             }
+           ]
+  end
+
+  test "send_message still rejects empty text when attachments are missing" do
+    assert {:error, {:validation, %{message: ["can't be blank"]}}} =
+             Chat.send_message("shop-empty", nil, "   ",
+               stream_to: self(),
+               stream_ref: %{}
+             )
   end
 
   test "send_message applies the space runtime overrides before streaming" do
@@ -304,6 +355,53 @@ defmodule OpenClawZalify.ChatTest do
              %{
                session_key: session_key,
                attrs: %{model_ref: "deepseek/deepseek-chat", reasoning_level: "off"}
+             }
+           ] = FakeChatGateway.patch_calls()
+
+    assert session_key == session.openclaw_session_key
+  end
+
+  test "send_message falls back to the gateway default model when model_ref is not allowed" do
+    space =
+      FakeSpacesService.build_space("shop-fallback-model", %{
+        model_ref: "deepseek/deepseek-chat",
+        reasoning_level: "off"
+      })
+
+    FakeSpacesService.put!(
+      "shop-fallback-model",
+      space,
+      %AgentRecord{
+        workspace_id: "shop-fallback-model",
+        agent_id: "space-shop-fallback-model",
+        status: "active",
+        runtime_mode: "shared",
+        workspace_path: "/tmp/shop-fallback-model",
+        display_name: "Fallback Agent",
+        model_ref: "deepseek/deepseek-chat",
+        memory_enabled: true
+      }
+    )
+
+    FakeChatGateway.set_patch_results([
+      {:error, {:request_failed, %{"code" => "INVALID_REQUEST", "message" => "model not allowed: deepseek/deepseek-chat"}}},
+      {:ok, %{"ok" => true}}
+    ])
+
+    assert {:ok, %{session: session}} =
+             Chat.send_message("shop-fallback-model", nil, "Use any allowed model",
+               stream_to: self(),
+               stream_ref: %{}
+             )
+
+    assert [
+             %{
+               session_key: session_key,
+               attrs: %{model_ref: "deepseek/deepseek-chat", reasoning_level: "off"}
+             },
+             %{
+               session_key: session_key,
+               attrs: %{reasoning_level: "off"}
              }
            ] = FakeChatGateway.patch_calls()
 

@@ -27,6 +27,7 @@ defmodule OpenClawZalify.OpenClaw.ChatClient do
         session_id: Keyword.fetch!(opts, :session_id),
         session_key: Keyword.fetch!(opts, :session_key),
         message: Keyword.fetch!(opts, :message),
+        attachments: Keyword.get(opts, :attachments, []),
         idempotency_key: Keyword.fetch!(opts, :idempotency_key),
         timeout_ms: Keyword.get(opts, :timeout_ms, Config.openclaw_chat_timeout_ms()),
         token: gateway.token,
@@ -210,12 +211,26 @@ defmodule OpenClawZalify.OpenClaw.ChatClient do
         "sessionKey" => state.session_key,
         "message" => state.message,
         "deliver" => false,
+        "attachments" => serialize_attachments(state.attachments),
         "idempotencyKey" => state.idempotency_key,
         "timeoutMs" => state.timeout_ms
       }
     }
 
     {:reply, {:text, Jason.encode!(payload)}, %{state | request_id: request_id}}
+  end
+
+  defp serialize_attachments(attachments) when is_list(attachments) do
+    Enum.map(attachments, fn attachment ->
+      %{
+        "type" => attachment[:type] || attachment["type"],
+        "mimeType" => attachment[:mime_type] || attachment["mime_type"] || attachment[:mimeType],
+        "fileName" => attachment[:file_name] || attachment["file_name"] || attachment[:fileName],
+        "content" => attachment[:content] || attachment["content"]
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+    end)
   end
 
   defp notify_and_close(state, message) do
