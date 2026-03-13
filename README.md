@@ -11,7 +11,7 @@ notes:
 - model profiles, prompts, and defaults come from a config directory
 - sessions, runs, and agent bindings stay in SQLite by default
 
-A business like Zalify can run this engine, but the runtime is now driven by a
+A business like Zalify can run ClawEngine, but the runtime is now driven by a
 generic `instance -> spaces -> agents -> sessions` model instead of hard-coded
 workspace rules.
 
@@ -86,7 +86,7 @@ deployed as a separate HTTP service.
 Recommended dependency setup in the host app:
 
 ```elixir
-{:openclaw_zalify, path: "/abs/path/to/openclaw-zalify", runtime: false}
+{:openclaw_zalify, path: "/abs/path/to/clawengine", runtime: false}
 ```
 
 Recommended host config:
