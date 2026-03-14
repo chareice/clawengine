@@ -1,6 +1,6 @@
 defmodule OpenClawZalify.Skills do
   @moduledoc """
-  Workspace skill management backed by ClawHub-compatible skill folders.
+  Workspace skill management and ClawHub market lookups.
   """
 
   alias OpenClawZalify.Agents
@@ -13,10 +13,58 @@ defmodule OpenClawZalify.Skills do
           source: String.t()
         }
 
+  @type market_result :: %{
+          slug: String.t(),
+          name: String.t(),
+          score: float() | nil,
+          summary: String.t() | nil,
+          latest_version: String.t() | nil,
+          installs: non_neg_integer() | nil,
+          downloads: non_neg_integer() | nil,
+          stars: non_neg_integer() | nil,
+          owner_handle: String.t() | nil,
+          owner_name: String.t() | nil,
+          source: String.t()
+        }
+
   @spec list_workspace_skills(String.t()) :: {:ok, [skill_entry()]} | {:error, term()}
   def list_workspace_skills(workspace_id) when is_binary(workspace_id) do
     with {:ok, workspace_path} <- ensure_workspace_ready(workspace_id) do
       {:ok, do_list_workspace_skills(workspace_path)}
+    end
+  end
+
+  @spec search_market_skills(String.t(), map() | keyword()) ::
+          {:ok, [market_result()]} | {:error, term()}
+  def search_market_skills(query, opts \\ [])
+      when is_binary(query) and (is_map(opts) or is_list(opts)) do
+    with {:ok, normalized_query} <- required_query(query),
+         {:ok, results} <- runner().search_skills(normalized_query, limit: option_limit(opts)) do
+      {:ok, results}
+    end
+  end
+
+  @spec inspect_market_skill(String.t(), map() | keyword()) ::
+          {:ok, market_result()} | {:error, term()}
+  def inspect_market_skill(slug, opts \\ [])
+      when is_binary(slug) and (is_map(opts) or is_list(opts)) do
+    with {:ok, normalized_slug} <- required_slug(slug),
+         {:ok, skill} <-
+           runner().inspect_skill(normalized_slug,
+             version: option_text(opts, :version),
+             tag: option_text(opts, :tag)
+           ) do
+      {:ok, skill}
+    else
+      {:error, {:command_failed, message}} when is_binary(message) ->
+        if String.contains?(String.downcase(message), "skill not found") do
+          {:error, :not_found}
+        else
+          {:error, {:command_failed, message}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -267,8 +315,31 @@ defmodule OpenClawZalify.Skills do
 
   defp required_slug(_value), do: {:error, {:validation, %{slug: ["can't be blank"]}}}
 
+  defp required_query(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> {:error, {:validation, %{query: ["can't be blank"]}}}
+      trimmed -> {:ok, trimmed}
+    end
+  end
+
+  defp required_query(_value), do: {:error, {:validation, %{query: ["can't be blank"]}}}
+
+  defp option_limit(opts) when is_list(opts) do
+    opts
+    |> Keyword.get(:limit, 8)
+    |> normalize_limit()
+  end
+
+  defp option_limit(opts) when is_map(opts) do
+    opts
+    |> Map.get(:limit, Map.get(opts, "limit", 8))
+    |> normalize_limit()
+  end
+
+  defp option_limit(_opts), do: 8
+
   defp option_text(opts, key) when is_list(opts) do
-    value = Keyword.get(opts, key) || Keyword.get(opts, String.to_atom(to_string(key)))
+    value = Keyword.get(opts, key)
     normalize_text(value)
   end
 
@@ -278,6 +349,17 @@ defmodule OpenClawZalify.Skills do
   end
 
   defp option_text(_opts, _key), do: nil
+
+  defp normalize_limit(value) when is_integer(value) and value > 0, do: min(value, 20)
+
+  defp normalize_limit(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {parsed, ""} when parsed > 0 -> min(parsed, 20)
+      _ -> 8
+    end
+  end
+
+  defp normalize_limit(_value), do: 8
 
   defp map_text(map, key) when is_map(map) do
     normalize_text(Map.get(map, key))

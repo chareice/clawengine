@@ -58,6 +58,50 @@ defmodule OpenClawZalify.SkillsTest do
     @behaviour OpenClawZalify.Skills.Runner
 
     @impl true
+    def search_skills(query, _opts) do
+      normalized_query = String.trim(query)
+
+      {:ok,
+       [
+         %{
+           slug: "#{normalized_query}-calendar",
+           name: "#{String.capitalize(normalized_query)} Calendar",
+           score: 3.9,
+           summary: "Skill for #{normalized_query} planning",
+           latest_version: "1.4.0",
+           installs: 42,
+           downloads: 128,
+           stars: 7,
+           owner_handle: "clawhub",
+           owner_name: "ClawHub",
+           source: "clawhub"
+         }
+       ]}
+    end
+
+    @impl true
+    def inspect_skill("missing-skill", _opts) do
+      {:error, {:command_failed, "Skill not found"}}
+    end
+
+    def inspect_skill(slug, _opts) do
+      {:ok,
+       %{
+         slug: slug,
+         name: String.capitalize(slug),
+         score: nil,
+         summary: "Skill for #{slug}",
+         latest_version: "2.0.0",
+         installs: 99,
+         downloads: 256,
+         stars: 11,
+         owner_handle: "clawhub",
+         owner_name: "ClawHub",
+         source: "clawhub"
+       }}
+    end
+
+    @impl true
     def install_skill(workspace_path, slug, opts) do
       version = Keyword.get(opts, :version) || "1.0.0"
       create_skill(workspace_path, slug, version)
@@ -173,6 +217,25 @@ defmodule OpenClawZalify.SkillsTest do
     FakeSpacesService.put_space(workspace_id, workspace_path)
 
     assert {:ok, []} = Skills.list_workspace_skills(workspace_id)
+  end
+
+  test "search_market_skills returns normalized market results" do
+    assert {:ok, [skill]} = Skills.search_market_skills(" weather ")
+    assert skill.slug == "weather-calendar"
+    assert skill.name == "Weather Calendar"
+    assert skill.summary == "Skill for weather planning"
+    assert skill.installs == 42
+  end
+
+  test "inspect_market_skill returns detailed skill metadata" do
+    assert {:ok, skill} = Skills.inspect_market_skill("calendar")
+    assert skill.slug == "calendar"
+    assert skill.latest_version == "2.0.0"
+    assert skill.owner_handle == "clawhub"
+  end
+
+  test "inspect_market_skill maps missing clawhub skills to not_found" do
+    assert {:error, :not_found} = Skills.inspect_market_skill("missing-skill")
   end
 
   test "install_workspace_skill installs a skill into the workspace" do

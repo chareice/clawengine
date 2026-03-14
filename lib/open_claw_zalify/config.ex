@@ -11,7 +11,7 @@ defmodule OpenClawZalify.Config do
   @default_chat_timeout_ms 60_000
   @default_probe_timeout_ms 1_500
   @default_gateway_url "ws://127.0.0.1:18789"
-  @default_workspace_root "/home/node/.openclaw/workspace/spaces"
+  @default_workspace_root_suffix ".openclaw/workspace/spaces"
 
   @spec http_port() :: pos_integer()
   def http_port do
@@ -71,7 +71,14 @@ defmodule OpenClawZalify.Config do
   @spec openclaw_workspace_root() :: String.t()
   def openclaw_workspace_root do
     load_dotenv()
-    System.get_env("OPENCLAW_WORKSPACE_ROOT", @default_workspace_root)
+
+    case System.get_env("OPENCLAW_WORKSPACE_ROOT") do
+      value when is_binary(value) and value != "" ->
+        value
+
+      _other ->
+        default_workspace_root()
+    end
   end
 
   @spec engine_config_root() :: String.t()
@@ -101,6 +108,16 @@ defmodule OpenClawZalify.Config do
     case Integer.parse(value) do
       {parsed, ""} when parsed > 0 -> parsed
       _other -> fallback
+    end
+  end
+
+  defp default_workspace_root do
+    case System.get_env("HOME") do
+      value when is_binary(value) and value != "" ->
+        Path.join(value, @default_workspace_root_suffix)
+
+      _other ->
+        Path.join(System.user_home!(), @default_workspace_root_suffix)
     end
   end
 
