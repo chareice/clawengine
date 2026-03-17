@@ -1,0 +1,53 @@
+defmodule ClawEngine.Chat.RepoStore do
+  @moduledoc """
+  Repo-backed chat session persistence.
+  """
+
+  @behaviour ClawEngine.Chat.Store
+
+  alias ClawEngine.Chat.Session
+  alias ClawEngine.Chat.SessionRecord
+  @impl true
+  def get_session(session_id) do
+    {:ok, repo().get(Session, session_id) |> to_record()}
+  rescue
+    err -> {:error, err}
+  end
+
+  @impl true
+  def create_session(attrs) do
+    %Session{}
+    |> Session.changeset(%{
+      id: attrs.id,
+      workspace_id: attrs.workspace_id,
+      agent_id: attrs.agent_id,
+      openclaw_session_key: attrs.openclaw_session_key,
+      status: attrs.status
+    })
+    |> repo().insert()
+    |> case do
+      {:ok, session} -> {:ok, to_record(session)}
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    err -> {:error, err}
+  end
+
+  defp to_record(nil), do: nil
+
+  defp to_record(%Session{} = session) do
+    %SessionRecord{
+      id: session.id,
+      workspace_id: session.workspace_id,
+      agent_id: session.agent_id,
+      openclaw_session_key: session.openclaw_session_key,
+      status: session.status,
+      inserted_at: session.inserted_at,
+      updated_at: session.updated_at
+    }
+  end
+
+  defp repo do
+    ClawEngine.repo()
+  end
+end

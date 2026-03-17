@@ -1,4 +1,4 @@
-defmodule OpenClawZalify.Repo.Migrations.CreateChatSessions do
+defmodule ClawEngine.Repo.Migrations.CreateChatSessions do
   use Ecto.Migration
 
   def change do

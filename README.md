@@ -11,7 +11,7 @@ notes:
 - model profiles, prompts, and defaults come from a config directory
 - sessions, runs, and agent bindings stay in SQLite by default
 
-A business like Zalify can run ClawEngine, but the runtime is now driven by a
+A business can run ClawEngine, and the runtime is driven by a
 generic `instance -> spaces -> agents -> sessions` model instead of hard-coded
 workspace rules.
 
@@ -86,13 +86,13 @@ deployed as a separate HTTP service.
 Recommended dependency setup in the host app:
 
 ```elixir
-{:openclaw_zalify, path: "/abs/path/to/clawengine", runtime: false}
+{:claw_engine, path: "/abs/path/to/clawengine", runtime: false}
 ```
 
 Recommended host config:
 
 ```elixir
-config :openclaw_zalify,
+config :claw_engine,
   repo: HostApp.Repo,
   load_env_file: false,
   start_http_server: false,
@@ -104,7 +104,7 @@ Recommended host supervision tree:
 
 ```elixir
 children = [
-  {OpenClawZalify,
+  {ClawEngine,
    repo: HostApp.Repo,
    start_http_server: false,
    start_repo: false,
@@ -114,10 +114,10 @@ children = [
 
 In embedded mode, the host app should:
 
-- manage the engine config via `config :openclaw_zalify, ...`
+- manage the engine config via `config :claw_engine, ...`
 - run `mix openclaw.migrate` against the configured repo
-- call the engine services directly through `OpenClawZalify.Spaces`,
-  `OpenClawZalify.Agents`, and `OpenClawZalify.Chat`
+- call the engine services directly through `ClawEngine.Spaces`,
+  `ClawEngine.Agents`, and `ClawEngine.Chat`
 
 This keeps one BEAM process while still reusing the full ClawEngine control
 plane internally.

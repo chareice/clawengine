@@ -1,19 +1,19 @@
 import Config
 
-config :openclaw_zalify,
-  engine_registry: OpenClawZalify.Engine.Registry,
-  spaces_service: OpenClawZalify.Spaces,
-  agents_service: OpenClawZalify.Agents,
-  agents_store: OpenClawZalify.Agents.RepoStore,
-  skills_runner: OpenClawZalify.Skills.ClawHubRunner,
-  openclaw_admin_client: OpenClawZalify.OpenClaw.AdminClient,
-  openclaw_probe: OpenClawZalify.OpenClaw.Probe,
-  repo: OpenClawZalify.Repo,
+config :claw_engine,
+  engine_registry: ClawEngine.Engine.Registry,
+  spaces_service: ClawEngine.Spaces,
+  agents_service: ClawEngine.Agents,
+  agents_store: ClawEngine.Agents.RepoStore,
+  skills_runner: ClawEngine.Skills.ClawHubRunner,
+  openclaw_admin_client: ClawEngine.OpenClaw.AdminClient,
+  openclaw_probe: ClawEngine.OpenClaw.Probe,
+  repo: ClawEngine.Repo,
   load_env_file: true,
   start_engine_registry: true,
   start_http_server: true,
   start_repo: true
 
-config :openclaw_zalify, ecto_repos: [OpenClawZalify.Repo]
+config :claw_engine, ecto_repos: [ClawEngine.Repo]
 
 import_config "#{config_env()}.exs"

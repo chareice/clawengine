@@ -6,8 +6,8 @@ defmodule Mix.Tasks.Openclaw.Probe do
 
   use Mix.Task
 
-  alias OpenClawZalify.Config
-  alias OpenClawZalify.OpenClaw.Probe
+  alias ClawEngine.Config
+  alias ClawEngine.OpenClaw.Probe
 
   @impl Mix.Task
   def run(_args) do

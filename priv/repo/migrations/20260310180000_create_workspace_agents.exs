@@ -1,4 +1,4 @@
-defmodule OpenClawZalify.Repo.Migrations.CreateWorkspaceAgents do
+defmodule ClawEngine.Repo.Migrations.CreateWorkspaceAgents do
   use Ecto.Migration
 
   def change do

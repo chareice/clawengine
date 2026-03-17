@@ -1,10 +1,10 @@
 import Config
 
-config :openclaw_zalify,
-  agents_service: OpenClawZalify.Agents,
-  agents_store: OpenClawZalify.Agents.RepoStore,
-  openclaw_admin_client: OpenClawZalify.OpenClaw.AdminClient,
+config :claw_engine,
+  agents_service: ClawEngine.Agents,
+  agents_store: ClawEngine.Agents.RepoStore,
+  openclaw_admin_client: ClawEngine.OpenClaw.AdminClient,
   start_http_server: false
 
-config :openclaw_zalify,
+config :claw_engine,
   start_repo: false

@@ -1,9 +1,9 @@
-defmodule OpenClawZalify.MixProject do
+defmodule ClawEngine.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :openclaw_zalify,
+      app: :claw_engine,
       version: "0.1.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -15,7 +15,7 @@ defmodule OpenClawZalify.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {OpenClawZalify.Application, []}
+      mod: {ClawEngine.Application, []}
     ]
   end
 
