@@ -276,6 +276,27 @@ defmodule ClawEngine.AgentsTest do
     assert length(FakeAdminClient.create_calls()) == 1
   end
 
+  test "re-syncs runtime model for an existing workspace agent" do
+    assert {:ok, %{created?: true, agent: agent}} =
+             Agents.provision_workspace_agent("shop-existing-model", %{})
+
+    FakeAdminClient.reset!()
+
+    assert {:ok, %{created?: false, agent: same_agent}} =
+             Agents.provision_workspace_agent("shop-existing-model", %{
+               model_ref: "openai:glm-5-turbo"
+             })
+
+    assert same_agent.agent_id == agent.agent_id
+
+    assert [
+             %{
+               agent_id: "space-shop-existing-model",
+               attrs: %{model_ref: "openai/glm-5-turbo"}
+             }
+           ] = FakeAdminClient.update_calls()
+  end
+
   test "normalizes the workspace id into a stable agent name" do
     assert Agents.agent_name_for_workspace(" Demo / CN #1 ") == "space-demo-cn-1"
   end

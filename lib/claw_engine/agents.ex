@@ -97,7 +97,10 @@ defmodule ClawEngine.Agents do
          {:ok, existing} <- store().get_workspace_agent(workspace_id) do
       case existing do
         %AgentRecord{} = record ->
-          {:ok, %{created?: false, agent: record}}
+          with :ok <- sync_workspace_files(record.agent_id, workspace_id, attrs),
+               :ok <- sync_agent_runtime(record.agent_id, attrs) do
+            {:ok, %{created?: false, agent: record}}
+          end
 
         nil ->
           create_workspace_agent(workspace_id, attrs)
