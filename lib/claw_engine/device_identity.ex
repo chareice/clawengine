@@ -11,6 +11,8 @@ defmodule ClawEngine.DeviceIdentity do
       {:ok, identity} -> {:ok, identity}
       :not_found -> create_and_persist(path)
     end
+  rescue
+    e -> {:error, e}
   end
 
   defp identity_path do
