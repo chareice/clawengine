@@ -3,6 +3,7 @@ defmodule ClawEngine.AgentsTest do
 
   alias ClawEngine.Agents
   alias ClawEngine.Agents.AgentRecord
+  alias ClawEngine.Config
 
   defmodule MemoryStore do
     @behaviour ClawEngine.Agents.Store
@@ -65,6 +66,7 @@ defmodule ClawEngine.AgentsTest do
         fn ->
           %{
             create_calls: [],
+            update_calls: [],
             delete_calls: [],
             file_calls: [],
             fail_next_set_count: 0,
@@ -80,6 +82,7 @@ defmodule ClawEngine.AgentsTest do
       Agent.update(__MODULE__, fn _state ->
         %{
           create_calls: [],
+          update_calls: [],
           delete_calls: [],
           file_calls: [],
           fail_next_set_count: 0,
@@ -90,6 +93,7 @@ defmodule ClawEngine.AgentsTest do
     end
 
     def create_calls, do: Agent.get(__MODULE__, & &1.create_calls)
+    def update_calls, do: Agent.get(__MODULE__, & &1.update_calls)
     def delete_calls, do: Agent.get(__MODULE__, & &1.delete_calls)
     def file_calls, do: Agent.get(__MODULE__, & &1.file_calls)
 
@@ -110,6 +114,14 @@ defmodule ClawEngine.AgentsTest do
       end)
 
       {:ok, %{agent_id: name, name: name, workspace: workspace}}
+    end
+
+    def update_agent(agent_id, attrs) do
+      Agent.update(__MODULE__, fn state ->
+        %{state | update_calls: [%{agent_id: agent_id, attrs: attrs} | state.update_calls]}
+      end)
+
+      {:ok, %{"ok" => true, "agentId" => agent_id}}
     end
 
     def delete_agent(agent_id) do
@@ -232,9 +244,26 @@ defmodule ClawEngine.AgentsTest do
 
     assert agent.agent_id == "space-shop-01"
     assert agent.display_name == "Shop 01 Assistant"
-    assert agent.workspace_path == "/home/node/.openclaw/workspace/spaces/space-shop-01"
+    assert agent.workspace_path == Path.join(Config.openclaw_workspace_root(), "space-shop-01")
     assert length(FakeAdminClient.create_calls()) == 1
+    assert FakeAdminClient.update_calls() == []
     assert length(FakeAdminClient.file_calls()) == 3
+  end
+
+  test "syncs the configured model to OpenClaw after creating the workspace agent" do
+    assert {:ok, %{created?: true, agent: agent}} =
+             Agents.provision_workspace_agent("shop-model-sync", %{
+               model_ref: "openai:glm-5-turbo"
+             })
+
+    assert agent.agent_id == "space-shop-model-sync"
+
+    assert [
+             %{
+               agent_id: "space-shop-model-sync",
+               attrs: %{model_ref: "openai/glm-5-turbo"}
+             }
+           ] = FakeAdminClient.update_calls()
   end
 
   test "returns the existing workspace agent on repeated provision calls" do

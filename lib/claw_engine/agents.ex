@@ -5,6 +5,7 @@ defmodule ClawEngine.Agents do
 
   alias ClawEngine.Agents.AgentRecord
   alias ClawEngine.Config
+  alias ClawEngine.OpenClaw.ModelRef
 
   @default_file_sync_retry_delays_ms [250, 500, 1_000]
 
@@ -130,6 +131,7 @@ defmodule ClawEngine.Agents do
              workspace: workspace_path
            }),
          :ok <- sync_workspace_files(created_agent.agent_id, workspace_id, attrs),
+         :ok <- sync_agent_runtime(created_agent.agent_id, attrs),
          {:ok, record} <-
            store().upsert_workspace_agent(%{
              workspace_id: workspace_id,
@@ -175,6 +177,41 @@ defmodule ClawEngine.Agents do
             if retryable_file_sync_error?(reason) do
               if delay_ms > 0, do: Process.sleep(delay_ms)
               set_agent_file_with_retry(agent_id, name, content, rest)
+            else
+              error
+            end
+
+          _other ->
+            error
+        end
+    end
+  end
+
+  defp sync_agent_runtime(agent_id, attrs) do
+    model_ref =
+      attrs[:model_ref]
+      |> ModelRef.normalize_for_gateway()
+
+    case model_ref do
+      nil ->
+        :ok
+
+      normalized ->
+        update_agent_with_retry(agent_id, %{model_ref: normalized}, file_sync_retry_delays_ms())
+    end
+  end
+
+  defp update_agent_with_retry(agent_id, attrs, retry_delays_ms) do
+    case admin_client().update_agent(agent_id, attrs) do
+      {:ok, _result} ->
+        :ok
+
+      {:error, reason} = error ->
+        case retry_delays_ms do
+          [delay_ms | rest] ->
+            if retryable_file_sync_error?(reason) do
+              if delay_ms > 0, do: Process.sleep(delay_ms)
+              update_agent_with_retry(agent_id, attrs, rest)
             else
               error
             end

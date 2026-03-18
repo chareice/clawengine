@@ -5,10 +5,12 @@ defmodule ClawEngine.OpenClaw.AdminClient do
 
   alias ClawEngine.Config
   alias ClawEngine.OpenClaw.Client
+  alias ClawEngine.OpenClaw.ModelRef
 
   @callback health() :: {:ok, map()} | {:error, term()}
   @callback list_agents() :: {:ok, map()} | {:error, term()}
   @callback create_agent(map()) :: {:ok, map()} | {:error, term()}
+  @callback update_agent(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @callback delete_agent(String.t()) :: {:ok, map()} | {:error, term()}
   @callback list_agent_files(String.t()) :: {:ok, map()} | {:error, term()}
   @callback get_agent_file(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
@@ -28,6 +30,30 @@ defmodule ClawEngine.OpenClaw.AdminClient do
   def create_agent(%{name: name, workspace: workspace}) do
     request("agents.create", %{"name" => name, "workspace" => workspace})
     |> normalize_create_result()
+  end
+
+  @spec update_agent(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def update_agent(agent_id, attrs) when is_binary(agent_id) and is_map(attrs) do
+    params =
+      attrs
+      |> Enum.reduce(%{"agentId" => String.trim(agent_id)}, fn
+        {:name, value}, acc when is_binary(value) ->
+          Map.put(acc, "name", value)
+
+        {:workspace, value}, acc when is_binary(value) ->
+          Map.put(acc, "workspace", value)
+
+        {:model_ref, value}, acc when is_binary(value) ->
+          case ModelRef.normalize_for_gateway(value) do
+            normalized when is_binary(normalized) -> Map.put(acc, "model", normalized)
+            _other -> acc
+          end
+
+        {_key, _value}, acc ->
+          acc
+      end)
+
+    request("agents.update", params)
   end
 
   @spec delete_agent(String.t()) :: {:ok, map()} | {:error, term()}
@@ -60,7 +86,7 @@ defmodule ClawEngine.OpenClaw.AdminClient do
 
     with true <- gateway.token_present? || {:error, :missing_gateway_token},
          {:ok, payload} <-
-           Client.request(
+           client().request(
              [
                url: Config.openclaw_gateway_ws_url(),
                token: gateway.token,
@@ -87,4 +113,8 @@ defmodule ClawEngine.OpenClaw.AdminClient do
   end
 
   defp normalize_delete_result(other), do: other
+
+  defp client do
+    Application.get_env(:claw_engine, :openclaw_client, Client)
+  end
 end

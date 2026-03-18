@@ -5,6 +5,7 @@ defmodule ClawEngine.OpenClaw.ChatGateway do
 
   alias ClawEngine.Config
   alias ClawEngine.OpenClaw.Client
+  alias ClawEngine.OpenClaw.ModelRef
 
   @callback patch_session(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @callback chat_history(String.t(), pos_integer()) :: {:ok, map()} | {:error, term()}
@@ -16,7 +17,10 @@ defmodule ClawEngine.OpenClaw.ChatGateway do
       attrs
       |> Enum.reduce(%{"key" => session_key}, fn
         {:model_ref, value}, acc when is_binary(value) ->
-          Map.put(acc, "model", value)
+          case ModelRef.normalize_for_gateway(value) do
+            normalized when is_binary(normalized) -> Map.put(acc, "model", normalized)
+            _other -> acc
+          end
 
         {:reasoning_level, value}, acc when is_binary(value) ->
           Map.put(acc, "reasoningLevel", value)
@@ -53,7 +57,7 @@ defmodule ClawEngine.OpenClaw.ChatGateway do
 
     with true <- gateway.token_present? || {:error, :missing_gateway_token},
          {:ok, payload} <-
-           Client.request(
+           client().request(
              [
                url: Config.openclaw_gateway_ws_url(),
                token: gateway.token,
@@ -69,4 +73,8 @@ defmodule ClawEngine.OpenClaw.ChatGateway do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp client do
+    Application.get_env(:claw_engine, :openclaw_client, Client)
+  end
 end
